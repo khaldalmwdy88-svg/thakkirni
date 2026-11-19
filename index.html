@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ذكّرني | منظّم الطالب</title>
+  <link rel="icon" href="assets/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- الخلفية المتحركة -->
+  <div class="bg" aria-hidden="true">
+    <div class="orb o1"></div>
+    <div class="orb o2"></div>
+    <div class="orb o3"></div>
+    <div class="grid"></div>
+  </div>
+
+  <!-- ===================== شاشة الدخول ===================== -->
+  <section id="auth" class="screen active">
+    <div class="auth-wrap">
+      <div class="auth-hero">
+        <img src="assets/hero.svg" alt="ذكّرني" class="hero-img">
+        <h1 class="brand">ذكّرني</h1>
+        <p class="tag">لا كويز يفوتك، ولا تاسك يضيع منك.</p>
+        <ul class="perks">
+          <li>📝 كويزات واختبارات</li>
+          <li>✅ تاسكات وواجبات</li>
+          <li>🔔 تذكير قبل الموعد</li>
+        </ul>
+      </div>
+
+      <div class="card glass auth-card">
+        <!-- الخطوة 1: الإيميل -->
+        <div id="stepEmail">
+          <h2>تسجيل الدخول</h2>
+          <p class="muted">اكتب إيميلك ونرسل لك رمز تحقق</p>
+          <form id="emailForm" novalidate>
+            <input type="email" id="emailInput" placeholder="name@example.com" dir="ltr" autocomplete="email" required>
+            <button class="btn primary full" type="submit">أرسل الرمز ✨</button>
+          </form>
+        </div>
+
+        <!-- الخطوة 2: الرمز -->
+        <div id="stepCode" hidden>
+          <h2>رمز التحقق</h2>
+          <p class="muted">أرسلنا رمز من 6 أرقام إلى <b id="sentTo" dir="ltr"></b></p>
+          <form id="codeForm" novalidate>
+            <div class="otp" dir="ltr" id="otpBoxes">
+              <input inputmode="numeric" maxlength="1" aria-label="رقم 1">
+              <input inputmode="numeric" maxlength="1" aria-label="رقم 2">
+              <input inputmode="numeric" maxlength="1" aria-label="رقم 3">
+              <input inputmode="numeric" maxlength="1" aria-label="رقم 4">
+              <input inputmode="numeric" maxlength="1" aria-label="رقم 5">
+              <input inputmode="numeric" maxlength="1" aria-label="رقم 6">
+            </div>
+            <button class="btn primary full" type="submit">دخول 🚀</button>
+            <button class="btn ghost full" type="button" id="backBtn">تغيير الإيميل</button>
+          </form>
+          <p class="muted small center">
+            ما وصلك؟ <button type="button" class="link" id="resendBtn">أعد الإرسال</button>
+            <span id="resendTimer"></span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== التطبيق ===================== -->
+  <section id="app" class="screen">
+    <header class="topbar glass">
+      <div class="logo">
+        <img src="assets/logo.svg" alt="">
+        <span>ذكّرني</span>
+      </div>
+      <div class="user">
+        <button id="notifBtn" class="icon-btn" title="تفعيل الإشعارات">🔔</button>
+        <span id="adminBadge" class="badge gold" hidden>👑 أدمن</span>
+        <span id="userEmail" class="email-chip" dir="ltr"></span>
+        <button id="logoutBtn" class="btn ghost sm">خروج</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <div class="greet">
+        <h1 id="greeting"></h1>
+        <p class="muted" id="todayStr"></p>
+      </div>
+
+      <!-- الإحصائيات -->
+      <div class="stats">
+        <div class="stat glass"><span class="s-ico">📌</span><b id="stTotal">0</b><small>قادمة</small></div>
+        <div class="stat glass"><span class="s-ico">⏰</span><b id="stToday">0</b><small>خلال 24 ساعة</small></div>
+        <div class="stat glass"><span class="s-ico">⚠️</span><b id="stLate">0</b><small>متأخرة</small></div>
+        <div class="stat glass"><span class="s-ico">🏆</span><b id="stDone">0</b><small>منجزة</small></div>
+      </div>
+
+      <!-- أقرب موعد -->
+      <div id="nextUp" class="next-up glass"></div>
+
+      <div class="layout">
+        <!-- نموذج الإضافة -->
+        <form id="taskForm" class="card glass add-card" novalidate>
+          <h3>➕ أضف تذكير</h3>
+
+          <div class="type-picker" id="typePicker"></div>
+
+          <label>اسم المادة
+            <input id="fSubject" placeholder="مثلاً: IE200" required>
+          </label>
+          <label>العنوان / ملاحظة
+            <input id="fTitle" placeholder="مثلاً: الفصل 3 و 4">
+          </label>
+          <div class="row">
+            <label>التاريخ
+              <input type="date" id="fDate" required>
+            </label>
+            <label>الوقت
+              <input type="time" id="fTime" value="08:00">
+            </label>
+          </div>
+          <label>ذكّرني قبلها بـ
+            <select id="fRemind">
+              <option value="60">ساعة</option>
+              <option value="180">3 ساعات</option>
+              <option value="720">12 ساعة</option>
+              <option value="1440" selected>يوم</option>
+              <option value="2880">يومين</option>
+              <option value="10080">أسبوع</option>
+            </select>
+          </label>
+          <button class="btn primary full" type="submit">حفظ التذكير</button>
+        </form>
+
+        <!-- القائمة -->
+        <div class="list-wrap">
+          <div class="filters" id="filters"></div>
+          <div id="list"></div>
+        </div>
+      </div>
+
+      <!-- لوحة الأدمن -->
+      <section id="adminPanel" class="card glass admin" hidden>
+        <h3>👑 لوحة الأدمن</h3>
+        <div id="adminContent"></div>
+      </section>
+    </main>
+  </section>
+
+  <div id="toasts" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

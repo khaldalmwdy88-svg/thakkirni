@@ -1,0 +1,9 @@
+{
+  "name": "thakkirni",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^11.1.9",
+    "nodemailer": "^10.6.0"
+  }
+}
