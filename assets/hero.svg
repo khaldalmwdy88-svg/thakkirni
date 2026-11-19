@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 360">
+  <defs>
+    <linearGradient id="cal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a2150"/>
+      <stop offset="1" stop-color="#151029"/>
+    </linearGradient>
+    <linearGradient id="calTop" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#ec4899"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff1c9"/>
+      <stop offset=".45" stop-color="#f5c76b"/>
+      <stop offset="1" stop-color="#d97706"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#f5c76b" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#f5c76b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <ellipse cx="200" cy="190" rx="190" ry="160" fill="url(#glow2)"/>
+
+  <!-- مدار -->
+  <ellipse cx="200" cy="200" rx="175" ry="60" fill="none" stroke="#f5c76b" stroke-opacity=".35" stroke-width="1.5" transform="rotate(-14 200 200)"/>
+  <circle cx="40" cy="232" r="6" fill="#f5c76b"/>
+  <circle cx="358" cy="150" r="4" fill="#ec4899"/>
+
+  <!-- التقويم -->
+  <g transform="rotate(-6 170 200)">
+    <rect x="70" y="95" width="200" height="190" rx="26" fill="url(#cal)" stroke="#ffffff" stroke-opacity=".15"/>
+    <path d="M70 121a26 26 0 0 1 26-26h148a26 26 0 0 1 26 26v24H70z" fill="url(#calTop)"/>
+    <rect x="110" y="80" width="12" height="34" rx="6" fill="#e5e0ff"/>
+    <rect x="218" y="80" width="12" height="34" rx="6" fill="#e5e0ff"/>
+    <g fill="#ffffff" fill-opacity=".12">
+      <rect x="92" y="165" width="30" height="24" rx="7"/><rect x="132" y="165" width="30" height="24" rx="7"/>
+      <rect x="172" y="165" width="30" height="24" rx="7"/><rect x="212" y="165" width="30" height="24" rx="7"/>
+      <rect x="92" y="199" width="30" height="24" rx="7"/><rect x="172" y="199" width="30" height="24" rx="7"/>
+      <rect x="212" y="199" width="30" height="24" rx="7"/>
+      <rect x="92" y="233" width="30" height="24" rx="7"/><rect x="132" y="233" width="30" height="24" rx="7"/>
+      <rect x="172" y="233" width="30" height="24" rx="7"/>
+    </g>
+    <!-- اليوم المميز -->
+    <rect x="132" y="199" width="30" height="24" rx="7" fill="url(#gold)"/>
+    <path d="M139 211l5 5 10-10" fill="none" stroke="#2a1a00" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="212" y="233" width="30" height="24" rx="7" fill="#ec4899" fill-opacity=".8"/>
+  </g>
+
+  <!-- الجرس -->
+  <circle cx="285" cy="130" r="80" fill="url(#glow)"/>
+  <g transform="rotate(14 285 130)">
+    <path d="M285 70c-24 0-40 18-40 42v26l-12 18h104l-12-18v-26c0-24-16-42-40-42z" fill="url(#gold)"/>
+    <path d="M262 100c4-12 12-18 22-20" stroke="#fff" stroke-opacity=".7" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <circle cx="285" cy="168" r="11" fill="url(#gold)"/>
+    <rect x="279" y="58" width="12" height="16" rx="6" fill="url(#gold)"/>
+  </g>
+  <!-- موجات الرنين -->
+  <path d="M345 82q14 18 4 40" stroke="#f5c76b" stroke-width="4" stroke-linecap="round" fill="none" opacity=".8"/>
+  <path d="M360 70q22 30 6 62" stroke="#f5c76b" stroke-width="3" stroke-linecap="round" fill="none" opacity=".45"/>
+
+  <!-- شارة الإشعار -->
+  <circle cx="318" cy="78" r="16" fill="#ec4899" stroke="#151029" stroke-width="4"/>
+  <text x="318" y="84" text-anchor="middle" font-family="Arial" font-weight="900" font-size="17" fill="#fff">3</text>
+
+  <!-- نجوم -->
+  <g fill="#fff">
+    <path d="M60 70l3 8 8 3-8 3-3 8-3-8-8-3 8-3z"/>
+    <path d="M345 260l2.5 6 6 2.5-6 2.5-2.5 6-2.5-6-6-2.5 6-2.5z" fill="#f5c76b"/>
+    <circle cx="120" cy="40" r="2.5"/><circle cx="380" cy="210" r="2"/><circle cx="30" cy="150" r="2"/>
+  </g>
+</svg>
