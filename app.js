@@ -377,7 +377,7 @@ function itemHTML(t) {
       <div class="meta">
         <span class="pill type">${ty.label}</span>
         ${t.grade ? `<span class="pill grade">🎯 ${esc(t.grade)}</span>` : ''}
-        ${t.src === 'bb' ? '<span class="pill bb">🔗 Blackboard</span>' : ''}
+        ${t.src === 'bb' ? `<span class="pill bb">🔗 ${t.cal === 'gc' ? 'Classroom' : 'Blackboard'}</span>` : ''}
         <span class="pill">🗓️ ${fmtDate(t.due)}</span>
         ${t.done ? '<span class="pill ok">✔ منجز</span>' : `<span class="pill ${cls}">${countdownText(left)}</span>`}
       </div>
@@ -1445,45 +1445,65 @@ $('#libBody').addEventListener('click', e => {
    🔗 ربط واجبات Blackboard (اختياري)
    ========================================================= */
 const BB = {
-  status: { linked: false },
+  links: [],
   busy: false,
   async load() {
     if (CONFIG.DEMO_MODE) return this.render();
-    try { this.status = await api('bb'); } catch { }
+    try { this.links = (await api('bb')).links || []; } catch { }
     this.render();
   },
   render() {
-    const s = this.status;
+    const n = this.links.length;
     const st = $('#bbState');
-    st.textContent = s.linked ? '✅ مربوط' : 'غير مربوط';
-    st.classList.toggle('on', !!s.linked);
-    const warn = `<div class="warn">⚠️ <b>تنبيه:</b> لما تربط، كل الواجبات والاختبارات اللي في Blackboard بتنضاف هنا تلقائياً كتذكيرات، وعليها علامة <b>🔗 Blackboard</b>. وتتحدّث مرتين في اليوم، وإذا الدكتور غيّر موعد يتغيّر عندك. وتقدر تحذف أي تذكير ما تبيه، وما يرجع.</div>`;
-    if (!s.linked) {
-      $('#bbBody').innerHTML = `${warn}
-        <ol class="steps">
-          <li>افتح Blackboard، ثم <b>Calendar</b></li>
-          <li>اضغط الترس <b>⚙️</b>، ثم النقاط <b>•••</b>، ثم <b>Share calendar</b></li>
-          <li>انسخ الرابط (يبدأ بـ https وآخره .ics) والصقه هنا 👇</li>
-        </ol>
-        <div class="bb-row">
-          <input id="bbUrl" dir="ltr" placeholder="https://.../calendar.ics" autocomplete="off">
-          <button class="btn primary" id="bbLink" type="button">اربط 🔗</button>
-        </div>
-        <p class="muted small">🔒 الرابط خاص فيك. نحفظه بشكل آمن ولا أحد يشوفه غيرك.</p>`;
-    } else {
-      const r = s.result || {};
-      $('#bbBody').innerHTML = `${warn}
+    st.textContent = n ? `✅ ${this.links.map(l => l.label).join(' + ')}` : 'غير مربوط';
+    st.classList.toggle('on', n > 0);
+
+    const warn = `<div class="warn">⚠️ <b>تنبيه:</b> لما تربط، كل الواجبات والاختبارات اللي في <b>Blackboard</b> أو <b>Classroom</b> بتنضاف هنا تلقائياً كتذكيرات، وعليها علامة <b>🔗</b>. وتتحدّث مرتين في اليوم، وإذا الدكتور غيّر موعد يتغيّر عندك. وتقدر تحذف أي تذكير ما تبيه، وما يرجع.</div>`;
+
+    const linked = this.links.map(l => {
+      const r = l.result || {};
+      const sk = r.skipped || {};
+      const skippedN = (sk.recurring || 0) + (sk.class || 0) + (sk.other || 0);
+      return `<div class="bb-link">
         <div class="bb-info">
-          📡 مربوط بـ <b dir="ltr">${esc(s.host)}</b><br>
-          🕐 آخر تحديث: ${s.lastSync ? fmtShort(s.lastSync) : '—'}<br>
+          <b>🔗 ${esc(l.label)}</b> <span class="muted" dir="ltr">(${esc(l.host)})</span><br>
+          🕐 آخر تحديث: ${l.lastSync ? fmtShort(l.lastSync) : '—'}<br>
           📚 لقينا ${r.found ?? 0} واجب واختبار قادم${r.added ? ` · انضاف ${r.added} جديد` : ''}${r.updated ? ` · تحدّث ${r.updated}` : ''}
-          ${s.error ? `<br><span class="err">⚠️ ${esc(s.error)}</span>` : ''}
+          ${r.total !== undefined ? `<br><small class="muted">في التقويم ${r.total} موعد: ${sk.past || 0} قديم، ${skippedN} محاضرات أو مواعيد مو واجبات</small>` : ''}
+          ${l.error ? `<br><span class="err">⚠️ ${esc(l.error)}</span>` : ''}
         </div>
-        <div class="bb-row">
-          <button class="btn ghost" id="bbRefresh" type="button">🔄 حدّث الحين</button>
-          <button class="btn ghost" id="bbUnlink" type="button">❌ إلغاء الربط</button>
-        </div>`;
-    }
+        <button class="btn ghost sm" data-bb="unlink" data-id="${esc(l.id)}" type="button">❌ إلغاء الربط</button>
+      </div>`;
+    }).join('');
+
+    const addForm = n >= 3 ? '' : `
+      <details class="bb-help" ${n ? '' : 'open'}>
+        <summary>${n ? '➕ اربط تقويم ثاني' : '📖 كيف أجيب الرابط؟'}</summary>
+        <div class="bb-tabs">
+          <b>🟢 Blackboard</b>
+          <ol class="steps">
+            <li>افتح Blackboard، ثم <b>Calendar</b></li>
+            <li>اضغط الترس <b>⚙️</b>، ثم النقاط <b>•••</b>، ثم <b>Share calendar</b></li>
+            <li>انسخ الرابط (يبدأ بـ https وآخره .ics)</li>
+          </ol>
+          <b>🔵 Google Classroom</b>
+          <ol class="steps">
+            <li>افتح <b>calendar.google.com</b> من المتصفح (مو التطبيق)</li>
+            <li>اضغط الترس <b>⚙️</b>، ثم <b>الإعدادات</b>، واختر تقويم الفصل من القائمة</li>
+            <li>انزل لـ <b>Integrate calendar</b> وانسخ <b>Secret address in iCal format</b></li>
+          </ol>
+          <p class="muted small">إذا ما طلع لك العنوان السري، فغالباً جامعتك قافلته.</p>
+        </div>
+      </details>
+      <div class="bb-row">
+        <input id="bbUrl" dir="ltr" placeholder="https://.../calendar.ics" autocomplete="off">
+        <button class="btn primary" data-bb="link" type="button">اربط 🔗</button>
+      </div>
+      <p class="muted small">🔒 الرابط خاص فيك. نحفظه بشكل آمن ولا أحد يشوفه غيرك. وتقدر تربط لين 3 تقاويم.</p>`;
+
+    $('#bbBody').innerHTML = `${warn}${linked}
+      ${n ? `<div class="bb-row" style="margin-bottom:14px"><button class="btn ghost" data-bb="refresh" type="button">🔄 حدّث الحين</button></div>` : ''}
+      ${addForm}`;
   },
   async call(method, body, okMsg) {
     if (this.busy) return;
@@ -1491,10 +1511,11 @@ const BB = {
     this.busy = true;
     $$('#bbBody button').forEach(b => b.disabled = true);
     try {
-      this.status = await api('bb', { method, body });
+      const r = await api('bb', { method, body });
+      this.links = r.links || [];
       await Tasks.load();
       render();
-      if (okMsg) toast(okMsg(this.status), 'ok', 5000);
+      if (okMsg) toast(okMsg(this.links), 'ok', 5000);
     } catch (e) {
       toast(esc(e.message), 'err', 6000);
     } finally {
@@ -1505,17 +1526,19 @@ const BB = {
 };
 
 $('#bbBody').addEventListener('click', e => {
-  const id = e.target.closest('button')?.id;
-  if (id === 'bbLink') {
+  const b = e.target.closest('[data-bb]');
+  if (!b) return;
+  const act = b.dataset.bb;
+  if (act === 'link') {
     const url = $('#bbUrl').value.trim();
     if (!url) return toast('الصق رابط التقويم أول', 'err');
-    BB.call('POST', { url }, s => `🔗 تم الربط! لقينا ${s.result?.found ?? 0} واجب واختبار`);
-  } else if (id === 'bbRefresh') {
-    BB.call('POST', { refresh: true }, s => `🔄 تحدّث${s.result?.added ? ` · ${s.result.added} جديد` : ''}`);
-  } else if (id === 'bbUnlink') {
-    if (!confirm('تبي تلغي ربط Blackboard؟')) return;
-    const removeTasks = confirm('تبي نحذف بعد التذكيرات اللي جت من Blackboard؟\n(موافق = نحذفها، إلغاء = نخليها)');
-    BB.call('DELETE', { removeTasks }, () => 'انلغى الربط');
+    BB.call('POST', { url }, links => { const l = links[links.length - 1]; return `🔗 انربط ${l?.label || ''}! لقينا ${l?.result?.found ?? 0} واجب واختبار`; });
+  } else if (act === 'refresh') {
+    BB.call('POST', { refresh: true }, () => '🔄 تحدّث');
+  } else if (act === 'unlink') {
+    if (!confirm('تبي تلغي ربط هالتقويم؟')) return;
+    const removeTasks = confirm('تبي نحذف بعد التذكيرات اللي جت منه؟\n(موافق = نحذفها، إلغاء = نخليها)');
+    BB.call('DELETE', { id: b.dataset.id, removeTasks }, () => 'انلغى الربط');
   }
 });
 

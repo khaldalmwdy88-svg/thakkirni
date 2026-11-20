@@ -408,3 +408,9 @@ th{color:var(--muted);font-weight:700}
 .dev b{color:var(--gold)}
 .dev a.btn{text-decoration:none;color:#7ef0a8;border-color:rgba(37,211,102,.45)}
 #auth .dev{margin-top:-30px}
+.bb-link{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;border:1px solid rgba(52,211,153,.3);background:rgba(52,211,153,.06);margin-bottom:10px}
+.bb-link .bb-info{margin:0}
+.bb-help{margin-bottom:12px;border:1px solid var(--border);border-radius:14px;padding:10px 14px;background:rgba(0,0,0,.2)}
+.bb-help summary{cursor:pointer;font-weight:700}
+.bb-tabs{margin-top:10px}
+.bb-tabs b{display:block;margin-top:6px}
