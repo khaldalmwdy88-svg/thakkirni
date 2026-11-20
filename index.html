@@ -151,6 +151,29 @@
         </div>
       </div>
 
+      <!-- خطة المذاكرة الذكية -->
+      <section class="card glass planner" id="planner">
+        <div class="quiz-head">
+          <h3>🗓️ خطة المذاكرة الذكية</h3>
+          <button class="btn ghost sm" id="planReset" type="button">ابدأ من جديد</button>
+        </div>
+        <p class="muted small">قول للمساعد عن اختبارك وظروفك، وهو يشوف تذكيراتك ويوزّع لك المذاكرة على الأيام.</p>
+
+        <div id="planChat" class="chat"></div>
+
+        <label class="attach" id="planAttach">
+          <input type="file" id="planFile" accept=".pdf,.docx,.txt" multiple hidden>
+          📎 <span id="planFileName">أرفق محتوى الاختبار: سكاشن، سلايدات، ملخص (اختياري)</span>
+        </label>
+
+        <div class="chat-input">
+          <textarea id="planMsg" rows="2" placeholder="مثال: عندي اختبار فيزياء يوم الأحد، الفصول 21 إلى 25. الثلاثاء مضغوط والأربعاء عندي واجب"></textarea>
+          <button class="btn primary" id="planSend" type="button">إرسال</button>
+        </div>
+
+        <div id="planView"></div>
+      </section>
+
       <!-- صانع الكويز -->
       <section class="card glass quiz-maker" id="quizMaker">
         <h3>🧠 صانع الكويز</h3>
@@ -175,6 +198,7 @@
         </div>
 
         <button class="btn primary full" id="qGo" type="button">ولّد الكويز ✨</button>
+        <button class="btn ghost full mist-btn" id="mistBtn" type="button">📕 بنك الأخطاء <span id="mistCount">(0)</span></button>
 
         <div id="qProgress" class="q-progress" hidden>
           <div class="bar"><i></i></div>

@@ -267,6 +267,8 @@ async function enterApp() {
   state.admin = !!s.admin;
   const admin = state.admin;
   await Tasks.load();
+  Mist.load();
+  Planner.load();
 
   $('#userEmail').textContent = s.email;
   $('#adminBadge').hidden = !admin;
@@ -292,6 +294,8 @@ $('#logoutBtn').addEventListener('click', () => {
   state.admin = false;
   Tasks.list = [];
   adminFetchedAt = 0;
+  Mist.list = [];
+  Planner.reset(false);
   $('#stepCode').hidden = true;
   $('#stepEmail').hidden = false;
   $('#emailInput').value = '';
@@ -569,7 +573,7 @@ const QUIZ = {
   IMG_SIZE: 1600,     // نصغّر الصور لهالحجم قبل الإرسال
   MAX_Q: 80
 };
-const quiz = { files: [], jobs: null, mode: 'same', questions: [], graded: false, busy: false };
+const quiz = { files: [], jobs: null, mode: 'same', questions: [], graded: false, busy: false, isBank: false };
 
 const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const QTYPE = { mcq: 'اختيار من متعدد', tf: 'صح أو خطأ', short: 'إجابة قصيرة', essay: 'مقالي' };
@@ -806,6 +810,7 @@ async function generateQuiz(mode) {
     if (!all.length) throw new Error('ما قدرنا نطلع أسئلة من الملفات. تأكد إنها بنك أسئلة واضح');
     if (failed) toast(`تخطينا ${failed} جزء ما قدرنا نقرأه`, 'info');
 
+    quiz.isBank = false;
     quiz.questions = prepare(all);
     quiz.graded = false;
     setProgress(100, 'جاهز!');
@@ -832,8 +837,8 @@ function renderQuiz(scoreText = '') {
 
   box.innerHTML = `
     <div class="quiz-head">
-      <h3>📝 الكويز (${quiz.questions.length} سؤال)</h3>
-      <span class="pill">${quiz.mode === 'vary' ? '🔀 أرقام وصياغة جديدة' : '📋 نفس الأسئلة'}</span>
+      <h3>${quiz.isBank ? '📕 بنك الأخطاء' : '📝 الكويز'} (${quiz.questions.length} سؤال)</h3>
+      <span class="pill">${quiz.isBank ? 'اللي تصححه ينحذف من البنك' : quiz.mode === 'vary' ? '🔀 أرقام وصياغة جديدة' : '📋 نفس الأسئلة'}</span>
     </div>
     ${scoreText}
     ${quiz.questions.map((q, i) => {
@@ -864,8 +869,10 @@ function renderQuiz(scoreText = '') {
     }).join('')}
     <div class="quiz-actions">
       ${g ? `
-        <button class="btn primary" data-qa="again">🔁 نفس الكويز بترتيب جديد</button>
-        <button class="btn ghost" data-qa="vary">🔀 نسخة بأرقام جديدة</button>
+        ${quiz.isBank
+          ? (Mist.list.length ? `<button class="btn primary" data-qa="bank">📕 كمّل الأخطاء الباقية (${Mist.list.length})</button>` : '')
+          : `<button class="btn primary" data-qa="again">🔁 نفس الكويز بترتيب جديد</button>
+             <button class="btn ghost" data-qa="vary">🔀 نسخة بأرقام جديدة</button>`}
         <button class="btn ghost" data-qa="close">✖ إغلاق</button>
       ` : `
         <button class="btn primary" data-qa="grade">✅ صحّح إجاباتي</button>
@@ -898,6 +905,7 @@ $('#quizRun').addEventListener('click', async e => {
     return;
   }
   if (act === 'vary') { generateQuiz('vary'); return; }
+  if (act === 'bank') { openBank(); return; }
 
   if (act === 'grade') {
     const unanswered = quiz.questions.filter(q => q.user === undefined || q.user === '').length;
@@ -932,12 +940,286 @@ $('#quizRun').addEventListener('click', async e => {
     }
 
     quiz.graded = true;
+    let bankNote = '';
+    if (quiz.isBank) {
+      const fixed = quiz.questions.filter(q => q.score === 1);
+      Mist.remove(fixed.map(q => q.bankId));
+      Mist.bump(quiz.questions.filter(q => q.score !== 1).map(q => q.bankId));
+      bankNote = fixed.length ? `<br>🎉 صححت ${fixed.length} من أخطائك وانحذفت من البنك` : '';
+    } else {
+      const wrong = quiz.questions.filter(q => q.score !== 1);
+      if (wrong.length) Mist.add(wrong);
+      bankNote = wrong.length ? `<br>📕 انحفظت ${wrong.length} أسئلة في بنك الأخطاء` : '';
+    }
     const total = quiz.questions.reduce((s, q) => s + (q.score || 0), 0);
     const pct = Math.round((total / quiz.questions.length) * 100);
     const msg = pct >= 90 ? 'أسطوري! 🏆' : pct >= 75 ? 'ممتاز 💪' : pct >= 50 ? 'زين، راجع الغلط 📚' : 'لا تيأس، جرّب مرة ثانية 🔁';
-    renderQuiz(`<div class="score-box"><b>${pct}%</b>${total} من ${quiz.questions.length} — ${msg}</div>`);
+    renderQuiz(`<div class="score-box"><b>${pct}%</b>${total} من ${quiz.questions.length} — ${msg}${bankNote}</div>`);
     $('#quizRun').scrollIntoView({ behavior: 'smooth' });
   }
+});
+
+
+/* =========================================================
+   📕 بنك الأخطاء
+   ========================================================= */
+// تخزين عام: localStorage + السيرفر
+async function loadUserData(k) {
+  const local = Store.get(`thk_${k}_${state.email}`, null);
+  if (CONFIG.DEMO_MODE) return local;
+  try { return (await api('data?k=' + k)).value ?? local; } catch { return local; }
+}
+const saveTimers = {};
+function saveUserData(k, value) {
+  Store.set(`thk_${k}_${state.email}`, value);
+  if (CONFIG.DEMO_MODE) return;
+  clearTimeout(saveTimers[k]);
+  saveTimers[k] = setTimeout(() => {
+    api('data?k=' + k, { method: 'PUT', body: { value } }).catch(e => toast('ما انحفظ على السيرفر: ' + esc(e.message), 'err'));
+  }, 500);
+}
+
+const Mist = {
+  list: [],
+  MAX: 300,
+  async load() {
+    const v = await loadUserData('mistakes');
+    this.list = Array.isArray(v) ? v : [];
+    this.updateBtn();
+  },
+  save() { saveUserData('mistakes', this.list); this.updateBtn(); },
+  key: q => (q.type + '|' + q.question).slice(0, 300),
+  add(qs) {
+    for (const q of qs) {
+      const k = this.key(q);
+      const old = this.list.find(m => this.key(m) === k);
+      if (old) { old.misses = (old.misses || 1) + 1; old.at = Date.now(); continue; }
+      const { user, score, feedback, bankId, ...clean } = q;
+      this.list.push({ ...clean, id: uid(), misses: 1, at: Date.now() });
+    }
+    if (this.list.length > this.MAX) this.list = this.list.slice(-this.MAX);
+    this.save();
+  },
+  remove(ids) {
+    const set = new Set(ids);
+    this.list = this.list.filter(m => !set.has(m.id));
+    this.save();
+  },
+  bump(ids) {
+    const set = new Set(ids);
+    this.list.forEach(m => { if (set.has(m.id)) { m.misses = (m.misses || 1) + 1; m.at = Date.now(); } });
+    this.save();
+  },
+  updateBtn() {
+    const n = this.list.length;
+    const c = $('#mistCount');
+    if (c) c.textContent = `(${n})`;
+  }
+};
+
+function openBank() {
+  if (!Mist.list.length) return toast('بنك أخطائك فاضي 👌 حل كويز وأي سؤال تغلط فيه بينحفظ هنا', 'info', 5000);
+  quiz.isBank = true;
+  quiz.graded = false;
+  // الأسئلة اللي غلط فيها أكثر تطلع أول
+  const sorted = [...Mist.list].sort((a, b) => (b.misses || 1) - (a.misses || 1)).slice(0, 40);
+  quiz.questions = prepare(sorted.map(({ id, misses, at, ...q }) => ({ ...q, bankId: id })));
+  renderQuiz();
+  $('#quizRun').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('#mistBtn').addEventListener('click', openBank);
+
+/* =========================================================
+   🗓️ خطة المذاكرة الذكية
+   ========================================================= */
+const WEEKDAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const Planner = {
+  data: { chat: [], plan: null, material: '', materialName: '' },
+  busy: false,
+  async load() {
+    const v = await loadUserData('plan');
+    this.data = { chat: [], plan: null, material: '', materialName: '', ...(v || {}) };
+    this.render();
+  },
+  save() { saveUserData('plan', this.data); },
+  reset(confirmFirst = true) {
+    if (confirmFirst && !confirm('تبي تمسح المحادثة والخطة وتبدأ من جديد؟')) return;
+    this.data = { chat: [], plan: null, material: '', materialName: '' };
+    if (confirmFirst) this.save();
+    this.render();
+  },
+
+  render() {
+    // المحادثة
+    const chat = $('#planChat');
+    if (!this.data.chat.length) {
+      chat.innerHTML = `<div class="bubble ai">هلا 👋 أنا مساعدك للمذاكرة. قول لي: وش الاختبار ومتى؟ وش الفصول أو السكاشن؟ وكم يوم تبي تخلص فيه؟ وإذا عندك أيام مضغوطة قول لي. وأنا أشوف تذكيراتك وأوزّع لك المذاكرة 📚</div>`;
+    } else {
+      chat.innerHTML = this.data.chat.map(m => `<div class="bubble ${m.role === 'user' ? 'me' : 'ai'}">${esc(m.text)}</div>`).join('');
+    }
+    if (this.busy) chat.insertAdjacentHTML('beforeend', '<div class="bubble ai typing">يفكّر... ✍️</div>');
+    chat.scrollTop = chat.scrollHeight;
+
+    // المرفق
+    $('#planFileName').textContent = this.data.materialName
+      ? `📎 مرفق: ${this.data.materialName} (اضغط للتغيير)`
+      : 'أرفق محتوى الاختبار: سكاشن، سلايدات، ملخص (اختياري)';
+    $('#planAttach').classList.toggle('has', !!this.data.materialName);
+
+    // الخطة
+    const p = this.data.plan;
+    const view = $('#planView');
+    if (!p || !Array.isArray(p.days) || !p.days.length) { view.innerHTML = ''; return; }
+    const today = isoDay(new Date());
+    let total = 0, done = 0;
+    p.days.forEach(d => d.items.forEach(it => { total++; if (it.done) done++; }));
+    view.innerHTML = `
+      <div class="plan-title">📋 ${esc(p.title || 'خطتك')}</div>
+      <div class="plan-progress">خلصت ${done} من ${total} مهمة ${total ? `(${Math.round(done / total * 100)}%)` : ''}</div>
+      <div class="plan-days">
+        ${p.days.map((d, di) => {
+          const dt = new Date(d.date + 'T12:00:00');
+          const cls = d.date === today ? 'today' : d.date < today ? 'past' : '';
+          const mins = d.items.reduce((s, it) => s + (Number(it.minutes) || 0), 0);
+          return `<div class="day ${cls}">
+            <h4>${d.date === today ? '⭐ اليوم — ' : ''}${WEEKDAYS[dt.getDay()] || ''} ${dt.getDate()}/${dt.getMonth() + 1}
+              <small>${mins ? `${Math.round(mins / 6) / 10} ساعة` : ''}</small></h4>
+            ${d.items.map((it, ii) => `
+              <label class="pitem ${it.done ? 'done' : ''}">
+                <input type="checkbox" data-d="${di}" data-i="${ii}" ${it.done ? 'checked' : ''}>
+                <span><span class="ps">${esc(it.subject)}</span> <span class="pt">${esc(it.task)}</span>
+                ${it.minutes ? `<span class="pm"> · ${it.minutes} د</span>` : ''}</span>
+              </label>`).join('') || '<div class="muted small">راحة 😌</div>'}
+          </div>`;
+        }).join('')}
+      </div>`;
+  },
+
+  // تنظيف الخطة اللي ترجع من الذكاء الاصطناعي
+  cleanPlan(p, old) {
+    if (!p || !Array.isArray(p.days)) return null;
+    const doneMap = new Map();
+    old?.days?.forEach(d => d.items.forEach(it => { if (it.done) doneMap.set(d.date + '|' + it.task, true); }));
+    const days = p.days.slice(0, 31).map(d => ({
+      date: /^\d{4}-\d{2}-\d{2}$/.test(d?.date) ? d.date : null,
+      items: (Array.isArray(d?.items) ? d.items : []).slice(0, 10).map(it => {
+        const task = String(it?.task ?? '').slice(0, 200);
+        return {
+          subject: String(it?.subject ?? '').slice(0, 60),
+          task,
+          minutes: Math.min(Math.max(Number(it?.minutes) || 0, 0), 600),
+          done: doneMap.has(d.date + '|' + task)
+        };
+      }).filter(it => it.task)
+    })).filter(d => d.date).sort((a, b) => a.date.localeCompare(b.date));
+    return days.length ? { title: String(p.title ?? '').slice(0, 100), days } : null;
+  },
+
+  async send() {
+    if (this.busy) return;
+    if (CONFIG.DEMO_MODE) return toast('المساعد يشتغل بس على الموقع المنشور (يحتاج السيرفر)', 'err');
+    const box = $('#planMsg');
+    const message = box.value.trim();
+    if (!message) return toast('اكتب رسالتك للمساعد ✍️', 'err');
+
+    this.data.chat.push({ role: 'user', text: message });
+    box.value = '';
+    this.busy = true;
+    $('#planSend').disabled = true;
+    this.render();
+
+    const now = new Date();
+    const tasks = Tasks.all().filter(t => !t.done && t.due > Date.now() - 86400000).map(t => ({
+      type: (TYPES[t.type] || TYPES.task).label,
+      subject: t.subject,
+      title: t.title,
+      due: `${isoDay(new Date(t.due))} ${new Date(t.due).toTimeString().slice(0, 5)}`
+    }));
+
+    try {
+      const s = Auth.current();
+      const res = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + (s?.token || '') },
+        body: JSON.stringify({
+          message,
+          history: this.data.chat.slice(-9, -1),
+          plan: this.data.plan,
+          tasks,
+          today: `${isoDay(now)} (${WEEKDAYS[now.getDay()]})`,
+          material: this.data.material
+        })
+      });
+      if (!res.ok) {
+        let d = {};
+        try { d = await res.json(); } catch { }
+        if (res.status === 401) { Auth.logout(); showScreen('auth'); }
+        throw new Error(d.error || `صار خطأ في السيرفر (${res.status})`);
+      }
+      const raw = await res.text();
+      const a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+      let out;
+      try { out = JSON.parse(raw.slice(a, b + 1)); } catch { throw new Error('رد المساعد ما اكتمل، جرّب مرة ثانية'); }
+      const plan = out.plan ? this.cleanPlan(out.plan, this.data.plan) : null;
+      if (plan) this.data.plan = plan;
+      this.data.chat.push({ role: 'assistant', text: String(out.reply || (plan ? 'جهزت لك الخطة 👇' : '...')).slice(0, 1500) });
+      if (this.data.chat.length > 40) this.data.chat = this.data.chat.slice(-40);
+      this.save();
+    } catch (e) {
+      this.data.chat.pop();
+      box.value = message;
+      toast(esc(e.message), 'err', 6000);
+    } finally {
+      this.busy = false;
+      $('#planSend').disabled = false;
+      this.render();
+    }
+  }
+};
+
+$('#planSend').addEventListener('click', () => Planner.send());
+$('#planMsg').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); Planner.send(); }
+});
+$('#planReset').addEventListener('click', () => Planner.reset());
+$('#planView').addEventListener('change', e => {
+  const c = e.target.closest('input[type=checkbox][data-d]');
+  if (!c) return;
+  const it = Planner.data.plan.days[+c.dataset.d].items[+c.dataset.i];
+  it.done = c.checked;
+  Planner.save();
+  Planner.render();
+  if (c.checked) toast('كفو! ✅', 'ok', 1500);
+});
+
+// إرفاق محتوى الاختبار (نقرأ النص بس)
+$('#planFile').addEventListener('change', async e => {
+  const files = [...e.target.files].slice(0, 5);
+  if (!files.length) return;
+  $('#planFileName').textContent = 'نقرأ الملفات...';
+  try {
+    let text = '';
+    for (const f of files) {
+      const name = f.name.toLowerCase();
+      if (name.endsWith('.pdf')) text += (await readPdf(f)).text + '\n\n';
+      else if (name.endsWith('.docx')) {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
+        text += (await window.mammoth.extractRawText({ arrayBuffer: await f.arrayBuffer() })).value + '\n\n';
+      } else if (name.endsWith('.txt')) text += (await f.text()) + '\n\n';
+    }
+    text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    if (text.length < 30) throw new Error('ما لقينا نص في الملف (إذا كان صور، اكتب الفصول بنفسك في الرسالة)');
+    Planner.data.material = text.slice(0, 30000);
+    Planner.data.materialName = files.map(f => f.name).join('، ');
+    Planner.save();
+    toast('📎 أرفقنا المحتوى، الحين قول للمساعد عن اختبارك', 'ok');
+  } catch (err) {
+    toast(esc(err.message), 'err', 6000);
+  }
+  e.target.value = '';
+  Planner.render();
 });
 
 /* ---------- التشغيل ---------- */
