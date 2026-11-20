@@ -556,6 +556,262 @@ function checkReminders() {
   if (changed) { Tasks.save(list); render(); }
 }
 
+/* =========================================================
+   صانع الكويز (ذكاء اصطناعي)
+   ========================================================= */
+const QUIZ = {
+  CHUNK: 5500,        // حجم كل جزء يرسل للسيرفر
+  MAX_CHARS: 60000,   // تقريباً 25 صفحة
+  MAX_PAGES: 40,
+  MAX_Q: 60
+};
+const quiz = { file: null, source: '', mode: 'same', questions: [], graded: false, busy: false };
+
+const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const QTYPE = { mcq: 'اختيار من متعدد', tf: 'صح أو خطأ', short: 'إجابة قصيرة', essay: 'مقالي' };
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if ([...document.scripts].some(s => s.src === src)) return res();
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error('ما قدرنا نحمّل أداة قراءة الملفات'));
+    document.head.appendChild(s);
+  });
+}
+
+// يطلع النص من PDF / Word / TXT داخل المتصفح
+async function extractText(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.txt')) return file.text();
+
+  if (name.endsWith('.pdf')) {
+    const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+    await loadScript(base + 'pdf.min.js');
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js';
+    const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    let out = '';
+    for (let p = 1; p <= Math.min(pdf.numPages, QUIZ.MAX_PAGES); p++) {
+      const content = await (await pdf.getPage(p)).getTextContent();
+      out += content.items.map(i => i.str + (i.hasEOL ? '\n' : ' ')).join('') + '\n\n';
+    }
+    return out;
+  }
+
+  if (name.endsWith('.docx')) {
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
+    const r = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+    return r.value;
+  }
+
+  throw new Error('نوع الملف غير مدعوم. استخدم PDF أو Word (.docx) أو TXT');
+}
+
+// يقسم النص لأجزاء عند نهاية الأسطر
+function chunkText(text) {
+  const chunks = [];
+  let cur = '';
+  for (const line of text.split('\n')) {
+    if ((cur + line).length > QUIZ.CHUNK && cur.trim()) { chunks.push(cur); cur = ''; }
+    cur += line + '\n';
+    while (cur.length > QUIZ.CHUNK) { chunks.push(cur.slice(0, QUIZ.CHUNK)); cur = cur.slice(QUIZ.CHUNK); }
+  }
+  if (cur.trim()) chunks.push(cur);
+  return chunks;
+}
+
+function setProgress(pct, label) {
+  const box = $('#qProgress');
+  box.hidden = pct === null;
+  if (pct === null) return;
+  $('i', box).style.width = pct + '%';
+  $('span', box).textContent = label;
+}
+
+// يجهز الأسئلة: يخلط الترتيب ويخلط خيارات الاختيار من متعدد
+function prepare(list) {
+  return shuffle(list).slice(0, QUIZ.MAX_Q).map(q => {
+    if (q.type !== 'mcq') return { ...q };
+    const order = shuffle(q.options.map((_, i) => i));
+    return { ...q, options: order.map(i => q.options[i]), answer: order.indexOf(q.answer) };
+  });
+}
+
+$('#qFile').addEventListener('change', e => {
+  quiz.file = e.target.files[0] || null;
+  quiz.source = '';
+  $('#qFileName').textContent = quiz.file ? quiz.file.name : 'اضغط لاختيار ملف';
+  $('#dropZone').classList.toggle('has', !!quiz.file);
+});
+
+async function generateQuiz(mode) {
+  if (quiz.busy) return;
+  if (CONFIG.DEMO_MODE) return toast('صانع الكويز يشتغل بس على الموقع المنشور (يحتاج السيرفر)', 'err');
+  if (!quiz.file && !quiz.source) return toast('اختر ملف أول 📄', 'err');
+
+  quiz.busy = true;
+  quiz.mode = mode;
+  const btn = $('#qGo');
+  btn.disabled = true;
+
+  try {
+    if (!quiz.source) {
+      setProgress(5, 'نقرأ الملف...');
+      const text = (await extractText(quiz.file)).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      if (text.length < 30) throw new Error('ما لقينا نص في الملف. إذا كان صور (سكان) ما نقدر نقرأه للحين');
+      if (text.length > QUIZ.MAX_CHARS) toast('الملف كبير، بناخذ أول 25 صفحة تقريباً', 'info');
+      quiz.source = text.slice(0, QUIZ.MAX_CHARS);
+    }
+
+    const chunks = chunkText(quiz.source);
+    const all = [];
+    let failed = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      setProgress(10 + Math.round((i / chunks.length) * 85), `الذكاء الاصطناعي يجهز الأسئلة... (${i + 1}/${chunks.length})`);
+      try {
+        const r = await api('quiz', { method: 'POST', body: { text: chunks[i], mode } });
+        all.push(...r.questions);
+      } catch (e) {
+        failed++;
+        if (/الحد اليومي|غير مفعّلة|سجّل دخول/.test(e.message)) throw e;
+      }
+    }
+
+    if (!all.length) throw new Error('ما قدرنا نطلع أسئلة من الملف. تأكد إنه بنك أسئلة واضح');
+    if (failed) toast(`تخطينا ${failed} جزء ما قدرنا نقرأه`, 'info');
+
+    quiz.questions = prepare(all);
+    quiz.graded = false;
+    setProgress(100, 'جاهز!');
+    renderQuiz();
+    $('#quizRun').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toast(`🧠 جهزنا ${quiz.questions.length} سؤال`, 'ok');
+  } catch (e) {
+    toast(esc(e.message), 'err', 6000);
+  } finally {
+    quiz.busy = false;
+    btn.disabled = false;
+    setTimeout(() => setProgress(null), 1200);
+  }
+}
+
+$('#qGo').addEventListener('click', () => {
+  generateQuiz($('input[name=qMode]:checked').value);
+});
+
+function renderQuiz(scoreText = '') {
+  const box = $('#quizRun');
+  box.hidden = false;
+  const g = quiz.graded;
+
+  box.innerHTML = `
+    <div class="quiz-head">
+      <h3>📝 الكويز (${quiz.questions.length} سؤال)</h3>
+      <span class="pill">${quiz.mode === 'vary' ? '🔀 أرقام وصياغة جديدة' : '📋 نفس الأسئلة'}</span>
+    </div>
+    ${scoreText}
+    ${quiz.questions.map((q, i) => {
+      const cls = !g ? '' : q.score === 1 ? 'ok' : q.score === 0.5 ? 'half' : 'bad';
+      let body;
+      if (q.type === 'mcq' || q.type === 'tf') {
+        body = q.options.map((o, k) => {
+          const mark = g ? (k === q.answer ? 'right' : k === q.user ? 'wrong' : '') : '';
+          return `<label class="opt ${mark}">
+            <input type="radio" name="q${i}" value="${k}" ${q.user === k ? 'checked' : ''} ${g ? 'disabled' : ''}>
+            <span>${esc(o)}</span></label>`;
+        }).join('');
+      } else {
+        body = `<textarea data-i="${i}" placeholder="اكتب إجابتك هنا..." ${g ? 'disabled' : ''}>${esc(q.user || '')}</textarea>`;
+      }
+      let fb = '';
+      if (g) {
+        const model = (q.type === 'short' || q.type === 'essay') ? `<div><b>الإجابة النموذجية:</b> ${esc(q.answer)}</div>` : '';
+        const extra = q.feedback ? `<div>${esc(q.feedback)}</div>` : '';
+        const exp = q.explanation ? `<div class="muted small">💡 ${esc(q.explanation)}</div>` : '';
+        if (model || extra || exp) fb = `<div class="fb">${model}${extra}${exp}</div>`;
+      }
+      return `<div class="qcard ${cls}">
+        <div class="qn"><b>سؤال ${i + 1}</b><span class="pill">${QTYPE[q.type]}</span></div>
+        <div class="qt">${esc(q.question)}</div>
+        ${body}${fb}
+      </div>`;
+    }).join('')}
+    <div class="quiz-actions">
+      ${g ? `
+        <button class="btn primary" data-qa="again">🔁 نفس الكويز بترتيب جديد</button>
+        <button class="btn ghost" data-qa="vary">🔀 نسخة بأرقام جديدة</button>
+        <button class="btn ghost" data-qa="close">✖ إغلاق</button>
+      ` : `
+        <button class="btn primary" data-qa="grade">✅ صحّح إجاباتي</button>
+        <button class="btn ghost" data-qa="close">✖ إغلاق</button>
+      `}
+    </div>`;
+}
+
+// حفظ إجابات الطالب أول بأول
+$('#quizRun').addEventListener('change', e => {
+  const r = e.target.closest('input[type=radio]');
+  if (r) quiz.questions[+r.name.slice(1)].user = +r.value;
+});
+$('#quizRun').addEventListener('input', e => {
+  const t = e.target.closest('textarea[data-i]');
+  if (t) quiz.questions[+t.dataset.i].user = t.value;
+});
+
+$('#quizRun').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-qa]');
+  if (!b) return;
+  const act = b.dataset.qa;
+
+  if (act === 'close') { $('#quizRun').hidden = true; return; }
+  if (act === 'again') {
+    quiz.questions = prepare(quiz.questions.map(({ user, score, feedback, ...q }) => q));
+    quiz.graded = false;
+    renderQuiz();
+    $('#quizRun').scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  if (act === 'vary') { generateQuiz('vary'); return; }
+
+  if (act === 'grade') {
+    const unanswered = quiz.questions.filter(q => q.user === undefined || q.user === '').length;
+    if (unanswered && !confirm(`باقي ${unanswered} سؤال بدون إجابة. تبي تصحح كذا؟`)) return;
+
+    b.disabled = true;
+    b.textContent = 'جاري التصحيح...';
+
+    // الاختيارات تتصحح مباشرة
+    quiz.questions.forEach(q => {
+      if (q.type === 'mcq' || q.type === 'tf') q.score = q.user === q.answer ? 1 : 0;
+    });
+
+    // المقالي والقصير يصححه الذكاء الاصطناعي
+    const open = quiz.questions.filter(q => q.type === 'short' || q.type === 'essay');
+    const toAI = open.filter(q => String(q.user || '').trim());
+    open.filter(q => !String(q.user || '').trim()).forEach(q => { q.score = 0; q.feedback = 'ما كتبت إجابة'; });
+
+    try {
+      for (let i = 0; i < toAI.length; i += 30) {
+        const part = toAI.slice(i, i + 30);
+        const r = await api('grade', {
+          method: 'POST',
+          body: { items: part.map(q => ({ question: q.question, model: q.answer, answer: q.user })) }
+        });
+        part.forEach((q, k) => { q.score = r.results[k]?.score ?? 0; q.feedback = r.results[k]?.feedback || ''; });
+      }
+    } catch (err) {
+      toAI.filter(q => q.score === undefined).forEach(q => { q.score = 0; q.feedback = 'ما قدرنا نصححها، قارن إجابتك بالنموذجية'; });
+      toast(esc(err.message), 'err');
+    }
+
+    quiz.graded = true;
+    const total = quiz.questions.reduce((s, q) => s + (q.score || 0), 0);
+    const pct = Math.round((total / quiz.questions.length) * 100);
+    const msg = pct >= 90 ? 'أسطوري! 🏆' : pct >= 75 ? 'ممتاز 💪' : pct >= 50 ? 'زين، راجع الغلط 📚' : 'لا تيأس، جرّب مرة ثانية 🔁';
+    renderQuiz(`<div class="score-box"><b>${pct}%</b>${total} من ${quiz.questions.length} — ${msg}</div>`);
+    $('#quizRun').scrollIntoView({ behavior: 'smooth' });
+  }
+});
+
 /* ---------- التشغيل ---------- */
 setInterval(() => { if (state.email) renderNextUp(); }, 1000);
 setInterval(() => { if (state.email) { render(); checkReminders(); } }, 30000);

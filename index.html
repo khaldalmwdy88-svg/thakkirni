@@ -143,6 +143,40 @@
         </div>
       </div>
 
+      <!-- صانع الكويز -->
+      <section class="card glass quiz-maker" id="quizMaker">
+        <h3>🧠 صانع الكويز</h3>
+        <p class="muted small">ارفع بنك أسئلة، والذكاء الاصطناعي يحوّله لكويز تفاعلي ويصححه لك.</p>
+
+        <label class="drop" id="dropZone">
+          <input type="file" id="qFile" accept=".pdf,.docx,.txt" hidden>
+          <span class="d-ico">📄</span>
+          <b id="qFileName">اضغط لاختيار ملف</b>
+          <small class="muted">PDF · Word (.docx) · TXT — حتى 25 صفحة تقريباً</small>
+        </label>
+
+        <div class="mode-pick">
+          <label>
+            <input type="radio" name="qMode" value="same" checked>
+            <span>📋 نفس الأسئلة<small>بترتيب عشوائي</small></span>
+          </label>
+          <label>
+            <input type="radio" name="qMode" value="vary">
+            <span>🔀 غيّر الأرقام والصياغة<small>نفس الأفكار والصعوبة</small></span>
+          </label>
+        </div>
+
+        <button class="btn primary full" id="qGo" type="button">ولّد الكويز ✨</button>
+
+        <div id="qProgress" class="q-progress" hidden>
+          <div class="bar"><i></i></div>
+          <span></span>
+        </div>
+      </section>
+
+      <!-- الكويز نفسه -->
+      <section class="card glass quiz-run" id="quizRun" hidden></section>
+
       <!-- لوحة الأدمن -->
       <section id="adminPanel" class="card glass admin" hidden>
         <h3>👑 لوحة الأدمن</h3>
