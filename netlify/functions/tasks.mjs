@@ -19,7 +19,12 @@ function clean(t, old) {
     created: Number(t.created) || Date.now(),
     n1: !!t.n1,
     n2: !!t.n2,
-    e1: !!old?.e1 // علامة "انرسل إيميل" يحددها السيرفر بس
+    e1: !!old?.e1 && old.due === due, // علامة "انرسل إيميل" يحددها السيرفر بس
+    note: str(t.note, 500),           // ملاحظة اختيارية
+    grade: str(t.grade, 30),          // الدرجة (اختياري)
+    src: t.src === 'bb' ? 'bb' : '',  // جاي من Blackboard؟
+    bbUid: str(t.bbUid, 200),
+    hidden: !!t.hidden                // تذكير Blackboard حذفه الطالب (عشان ما يرجع)
   };
 }
 

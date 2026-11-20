@@ -17,9 +17,9 @@ function waLink(t, now, kind) {
   const type = TYPES[t.type] || 'تاسك';
   const icon = ICONS[t.type] || '✅';
   const lines = kind === 'friend'
-    ? ['هلا 👋 تذكير سريع:', `ترى عندنا ${type} ${t.subject} ${icon}`, t.title ? `📝 ${t.title}` : null,
+    ? ['هلا 👋 تذكير سريع:', `ترى عندنا ${type} ${t.subject} ${icon}`, t.title ? `📝 ${t.title}` : null, t.grade ? `🎯 عليه ${t.grade}` : null,
        `🗓️ ${fmtDate(t.due)}`, `⏳ باقي: ${leftText(t.due - now)}`, 'لا تنساه 😉', '', `ذكّرني: ${site}`]
-    : ['🔔 تذكير للشعبة', `${icon} ${type} — ${t.subject}`, t.title ? `📝 ${t.title}` : null,
+    : ['🔔 تذكير للشعبة', `${icon} ${type} — ${t.subject}`, t.title ? `📝 ${t.title}` : null, t.grade ? `🎯 الدرجة: ${t.grade}` : null,
        `🗓️ الموعد: ${fmtDate(t.due)}`, `⏳ باقي: ${leftText(t.due - now)}`, '', `من موقع ذكّرني: ${site}`];
   return 'https://wa.me/?text=' + encodeURIComponent(lines.filter(l => l !== null).join('\n'));
 }
@@ -31,7 +31,7 @@ export default async () => {
 
   for (const { key } of blobs) {
     const list = (await tasks.get(key, { type: 'json' })) || [];
-    const due = list.filter(t => !t.done && !t.e1 && now >= t.due - t.remind * 60000 && now < t.due);
+    const due = list.filter(t => !t.done && !t.hidden && !t.e1 && now >= t.due - t.remind * 60000 && now < t.due);
     if (!due.length) continue;
 
     const email = decodeURIComponent(key);
@@ -39,6 +39,8 @@ export default async () => {
       <div style="background:#0b0918;border:1px solid #3a3266;border-radius:14px;padding:14px 16px;margin-bottom:10px">
         <div style="font-size:17px;font-weight:800">${ICONS[t.type] || '✅'} ${TYPES[t.type] || 'تاسك'} — ${escHtml(t.subject)}</div>
         ${t.title ? `<div style="color:#cfc9e6;margin-top:4px">${escHtml(t.title)}</div>` : ''}
+        ${t.grade ? `<div style="color:#a78bfa;margin-top:4px;font-size:14px">🎯 الدرجة: ${escHtml(t.grade)}</div>` : ''}
+        ${t.note ? `<div style="background:#1b1733;border-radius:10px;padding:8px 10px;margin-top:8px;font-size:14px;color:#e5e0ff">📌 ملاحظتك: ${escHtml(t.note)}</div>` : ''}
         <div style="color:#f5c76b;margin-top:6px;font-size:14px">🗓️ ${fmtDate(t.due)} — باقي ${leftText(t.due - now)}</div>
         <div>
           <a href="${waLink(t, now, 'group')}" style="display:inline-block;margin:12px 0 0 6px;font-weight:800;text-decoration:none;padding:10px 14px;border-radius:12px;font-size:14px;background:#25D366;color:#06301a">👥 أرسلها لقروب الشعبة</a>
