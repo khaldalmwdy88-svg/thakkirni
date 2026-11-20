@@ -376,6 +376,7 @@ function itemHTML(t) {
     </div>
     <div class="acts">
       <button data-act="done" data-id="${t.id}" title="${t.done ? 'إرجاع' : 'تم'}">${t.done ? '↩️' : '✔️'}</button>
+      <button data-act="share" data-id="${t.id}" title="أرسل لقروب الشعبة">📤</button>
       <button data-act="del" data-id="${t.id}" title="حذف">🗑️</button>
     </div>
   </div>`;
@@ -434,6 +435,10 @@ $('#list').addEventListener('click', e => {
     const t = Tasks.all().find(x => x.id === id);
     Tasks.update(id, { done: !t.done });
     if (!t.done) toast('كفو! 💪 خلّصتها', 'ok');
+  } else if (b.dataset.act === 'share') {
+    const t = Tasks.all().find(x => x.id === id);
+    if (t) window.open(waLink(t), '_blank');
+    return;
   } else if (b.dataset.act === 'del') {
     if (!confirm('متأكد تبي تحذفه؟')) return;
     Tasks.remove(id);
@@ -533,8 +538,24 @@ $('#notifBtn').addEventListener('click', async () => {
   toast(p === 'granted' ? 'تم تفعيل الإشعارات 🔔' : 'ما تم التفعيل — بنذكرك داخل الموقع بس', p === 'granted' ? 'ok' : 'info');
 });
 
-function notify(title, body) {
-  toast(`🔔 <b>${esc(title)}</b><br>${esc(body)}`, 'info', 10000);
+// رسالة جاهزة لقروب الشعبة على واتساب (تنفتح من حساب واتساب اللي في جهازك)
+function waLink(t) {
+  const ty = TYPES[t.type] || TYPES.task;
+  const msg = [
+    '🔔 تذكير للشعبة',
+    `${ty.icon} ${ty.label} — ${t.subject}`,
+    t.title ? `📝 ${t.title}` : null,
+    `🗓️ الموعد: ${fmtDate(t.due)}`,
+    t.due > Date.now() ? `⏳ ${countdownText(t.due - Date.now())}` : null,
+    '',
+    `من موقع ذكّرني: ${location.origin}`
+  ].filter(l => l !== null).join('\n');
+  return 'https://wa.me/?text=' + encodeURIComponent(msg);
+}
+
+function notify(title, body, task) {
+  const share = task ? `<br><a href="${waLink(task)}" target="_blank" rel="noopener" style="color:#25D366;font-weight:800">📤 أرسلها لقروب الشعبة</a>` : '';
+  toast(`🔔 <b>${esc(title)}</b><br>${esc(body)}${share}`, 'info', task ? 20000 : 10000);
   if ('Notification' in window && Notification.permission === 'granted') {
     try { new Notification(title, { body, icon: 'assets/logo.svg' }); } catch { }
   }
@@ -548,7 +569,7 @@ function checkReminders() {
     if (t.done) return t;
     const ty = TYPES[t.type] || TYPES.task;
     if (!t.n1 && now >= t.due - t.remind * 60000 && now < t.due) {
-      notify(`${ty.icon} تذكير: ${ty.label} ${t.subject}`, `${countdownText(t.due - now)} — ${fmtDate(t.due)}`);
+      notify(`${ty.icon} تذكير: ${ty.label} ${t.subject}`, `${countdownText(t.due - now)} — ${fmtDate(t.due)}`, t);
       t.n1 = true; changed = true;
     }
     if (!t.n2 && now >= t.due && now - t.due < 3600000) {
