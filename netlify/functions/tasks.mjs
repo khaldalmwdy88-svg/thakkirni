@@ -23,6 +23,7 @@ function clean(t, old) {
     note: str(t.note, 500),           // ملاحظة اختيارية
     grade: str(t.grade, 30),          // الدرجة (اختياري)
     src: t.src === 'bb' ? 'bb' : '',  // جاي من Blackboard؟
+    cal: t.cal === 'gc' ? 'gc' : t.src === 'bb' ? 'bb' : '', // bb = Blackboard، gc = Classroom
     bbUid: str(t.bbUid, 200),
     hidden: !!t.hidden                // تذكير Blackboard حذفه الطالب (عشان ما يرجع)
   };
