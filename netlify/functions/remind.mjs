@@ -11,19 +11,17 @@ function leftText(ms) {
   return d === 1 ? 'يوم' : d === 2 ? 'يومين' : d <= 10 ? `${d} أيام` : `${d} يوم`;
 }
 
-// رسالة جاهزة لقروب الشعبة على واتساب
-function waLink(t, now) {
+// رسالة واتساب جاهزة: kind = 'group' للقروب، 'friend' لصاحبك
+function waLink(t, now, kind) {
   const site = env('URL') || 'https://thakkirni-kau.netlify.app';
-  const msg = [
-    `🔔 تذكير للشعبة`,
-    `${ICONS[t.type] || '✅'} ${TYPES[t.type] || 'تاسك'} — ${t.subject}`,
-    t.title ? `📝 ${t.title}` : '',
-    `🗓️ الموعد: ${fmtDate(t.due)}`,
-    `⏳ باقي: ${leftText(t.due - now)}`,
-    ``,
-    `من موقع ذكّرني: ${site}`
-  ].filter((l, i) => l !== '' || i === 5).join('\n');
-  return 'https://wa.me/?text=' + encodeURIComponent(msg);
+  const type = TYPES[t.type] || 'تاسك';
+  const icon = ICONS[t.type] || '✅';
+  const lines = kind === 'friend'
+    ? ['هلا 👋 تذكير سريع:', `ترى عندنا ${type} ${t.subject} ${icon}`, t.title ? `📝 ${t.title}` : null,
+       `🗓️ ${fmtDate(t.due)}`, `⏳ باقي: ${leftText(t.due - now)}`, 'لا تنساه 😉', '', `ذكّرني: ${site}`]
+    : ['🔔 تذكير للشعبة', `${icon} ${type} — ${t.subject}`, t.title ? `📝 ${t.title}` : null,
+       `🗓️ الموعد: ${fmtDate(t.due)}`, `⏳ باقي: ${leftText(t.due - now)}`, '', `من موقع ذكّرني: ${site}`];
+  return 'https://wa.me/?text=' + encodeURIComponent(lines.filter(l => l !== null).join('\n'));
 }
 
 export default async () => {
@@ -42,7 +40,10 @@ export default async () => {
         <div style="font-size:17px;font-weight:800">${ICONS[t.type] || '✅'} ${TYPES[t.type] || 'تاسك'} — ${escHtml(t.subject)}</div>
         ${t.title ? `<div style="color:#cfc9e6;margin-top:4px">${escHtml(t.title)}</div>` : ''}
         <div style="color:#f5c76b;margin-top:6px;font-size:14px">🗓️ ${fmtDate(t.due)} — باقي ${leftText(t.due - now)}</div>
-        <a href="${waLink(t, now)}" style="display:inline-block;margin-top:12px;background:#25D366;color:#06301a;font-weight:800;text-decoration:none;padding:10px 16px;border-radius:12px;font-size:14px">📤 أرسلها لقروب الشعبة</a>
+        <div>
+          <a href="${waLink(t, now, 'group')}" style="display:inline-block;margin:12px 0 0 6px;font-weight:800;text-decoration:none;padding:10px 14px;border-radius:12px;font-size:14px;background:#25D366;color:#06301a">👥 أرسلها لقروب الشعبة</a>
+          <a href="${waLink(t, now, 'friend')}" style="display:inline-block;margin:12px 0 0 6px;font-weight:800;text-decoration:none;padding:10px 14px;border-radius:12px;font-size:14px;background:#1f3a2b;color:#7ef0a8;border:1px solid #25D366">💬 أرسلها لصاحبك</a>
+        </div>
       </div>`).join('');
 
     try {
@@ -50,7 +51,7 @@ export default async () => {
       await sendMail(
         email,
         `🔔 تذكير: ${TYPES[first.type] || 'تاسك'} ${first.subject}${due.length > 1 ? ` (+${due.length - 1})` : ''}`,
-        layout('عندك مواعيد قريبة 👇', rows + '<p style="color:#a19cb8;margin-top:14px">اضغط الزر الأخضر عشان ترسل التذكير لأصحابك في واتساب 💚<br>بالتوفيق! 🍀</p>')
+        layout('عندك مواعيد قريبة 👇', rows + '<p style="color:#a19cb8;margin-top:14px">تبي تذكّر أصحابك؟ اضغط الزر الأخضر وتنفتح لك رسالة واتساب جاهزة 💚<br>بالتوفيق! 🍀</p>')
       );
       // نقرأ آخر نسخة قبل الحفظ عشان ما نمسح تعديلات الطالب
       const sent = new Set(due.map(t => t.id));
