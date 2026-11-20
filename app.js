@@ -560,12 +560,16 @@ function checkReminders() {
    صانع الكويز (ذكاء اصطناعي)
    ========================================================= */
 const QUIZ = {
-  CHUNK: 5500,        // حجم كل جزء يرسل للسيرفر
+  CHUNK: 3500,        // حجم كل جزء يرسل للسيرفر
+  PARALLEL: 3,        // كم جزء نرسل في نفس الوقت
   MAX_CHARS: 60000,   // تقريباً 25 صفحة
   MAX_PAGES: 40,
-  MAX_Q: 60
+  MAX_FILES: 10,      // أقصى عدد ملفات مرة وحدة
+  MAX_IMAGES: 20,     // أقصى عدد صور (أو صفحات مصورة)
+  IMG_SIZE: 1600,     // نصغّر الصور لهالحجم قبل الإرسال
+  MAX_Q: 80
 };
-const quiz = { file: null, source: '', mode: 'same', questions: [], graded: false, busy: false };
+const quiz = { files: [], jobs: null, mode: 'same', questions: [], graded: false, busy: false };
 
 const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const QTYPE = { mcq: 'اختيار من متعدد', tf: 'صح أو خطأ', short: 'إجابة قصيرة', essay: 'مقالي' };
@@ -579,31 +583,91 @@ function loadScript(src) {
   });
 }
 
-// يطلع النص من PDF / Word / TXT داخل المتصفح
-async function extractText(file) {
-  const name = file.name.toLowerCase();
-  if (name.endsWith('.txt')) return file.text();
+// يصغّر صورة (أو canvas) ويرجعها JPEG بصيغة base64
+async function toJpeg(source) {
+  let img = source;
+  if (source instanceof Blob) {
+    img = await createImageBitmap(source).catch(() => new Promise((res, rej) => {
+      const el = new Image();
+      el.onload = () => res(el);
+      el.onerror = () => rej(new Error('ما قدرنا نفتح الصورة'));
+      el.src = URL.createObjectURL(source);
+    }));
+  }
+  const w = img.width, h = img.height;
+  const k = Math.min(1, QUIZ.IMG_SIZE / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * k);
+  c.height = Math.round(h * k);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.82).split(',')[1];
+}
 
-  if (name.endsWith('.pdf')) {
-    const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
-    await loadScript(base + 'pdf.min.js');
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js';
-    const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-    let out = '';
-    for (let p = 1; p <= Math.min(pdf.numPages, QUIZ.MAX_PAGES); p++) {
-      const content = await (await pdf.getPage(p)).getTextContent();
-      out += content.items.map(i => i.str + (i.hasEOL ? '\n' : ' ')).join('') + '\n\n';
+// PDF: ياخذ النص، والصفحات اللي ما فيها نص (سكان) يحولها لصور
+async function readPdf(file) {
+  const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  await loadScript(base + 'pdf.min.js');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js';
+  const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  let text = '';
+  const images = [];
+  for (let p = 1; p <= Math.min(pdf.numPages, QUIZ.MAX_PAGES); p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const t = content.items.map(i => i.str + (i.hasEOL ? '\n' : ' ')).join('');
+    if (t.replace(/\s/g, '').length >= 40) {
+      text += t + '\n\n';
+    } else if (images.length < QUIZ.MAX_IMAGES) {
+      const vp = page.getViewport({ scale: 2 });
+      const c = document.createElement('canvas');
+      c.width = vp.width;
+      c.height = vp.height;
+      await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      images.push(await toJpeg(c));
     }
-    return out;
   }
+  return { text, images };
+}
 
-  if (name.endsWith('.docx')) {
-    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
-    const r = await window.mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-    return r.value;
+// يحوّل كل الملفات المختارة إلى "مهام": أجزاء نص + صور
+async function buildJobs(files) {
+  let text = '';
+  let images = [];
+  for (const f of files) {
+    const name = f.name.toLowerCase();
+    if (f.type.startsWith('image/') || /\.(jpe?g|png|heic|heif|webp)$/.test(name)) {
+      images.push(await toJpeg(f));
+    } else if (name.endsWith('.pdf')) {
+      const r = await readPdf(f);
+      text += r.text;
+      images.push(...r.images);
+    } else if (name.endsWith('.docx')) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
+      text += (await window.mammoth.extractRawText({ arrayBuffer: await f.arrayBuffer() })).value + '\n\n';
+    } else if (name.endsWith('.txt')) {
+      text += (await f.text()) + '\n\n';
+    } else {
+      toast(`تخطينا "${esc(f.name)}" لأن نوعه غير مدعوم`, 'info');
+    }
   }
-
-  throw new Error('نوع الملف غير مدعوم. استخدم PDF أو Word (.docx) أو TXT');
+  text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (text.length > QUIZ.MAX_CHARS) {
+    toast('الملفات كبيرة، بناخذ أول 25 صفحة تقريباً من النص', 'info');
+    text = text.slice(0, QUIZ.MAX_CHARS);
+  }
+  if (images.length > QUIZ.MAX_IMAGES) {
+    toast(`بناخذ أول ${QUIZ.MAX_IMAGES} صورة بس`, 'info');
+    images = images.slice(0, QUIZ.MAX_IMAGES);
+  }
+  const jobs = [
+    ...(text.length >= 30 ? chunkText(text).map(t => ({ text: t })) : []),
+    ...images.map(img => ({ image: img }))
+  ];
+  if (!jobs.length) throw new Error('ما لقينا أسئلة نقدر نقرأها في الملفات');
+  return jobs;
 }
 
 // يقسم النص لأجزاء عند نهاية الأسطر
@@ -636,17 +700,73 @@ function prepare(list) {
   });
 }
 
+
+// تنظيف سؤال واحد من رد الذكاء الاصطناعي
+function cleanQ(q) {
+  const str = (v, n) => String(v ?? '').trim().slice(0, n);
+  const type = ['mcq', 'tf', 'short', 'essay'].includes(q?.type) ? q.type : null;
+  const question = str(q?.question, 1500);
+  if (!type || !question) return null;
+  const out = { type, question, explanation: str(q.explanation, 500) };
+  if (type === 'mcq' || type === 'tf') {
+    const options = Array.isArray(q.options) ? q.options.map(o => str(o, 400)).filter(Boolean).slice(0, 8) : [];
+    const answer = Number(q.answer);
+    if (options.length < 2 || !Number.isInteger(answer) || answer < 0 || answer >= options.length) return null;
+    out.options = options;
+    out.answer = answer;
+  } else {
+    out.answer = str(q.answer, 2000);
+  }
+  return out;
+}
+
+// يقرأ JSON حتى لو انقطع آخره (ياخذ الأسئلة الكاملة بس)
+function parseQuestions(raw) {
+  const a = raw.indexOf('{');
+  if (a < 0) throw new Error('رد فاضي من الذكاء الاصطناعي');
+  raw = raw.slice(a);
+  try { return JSON.parse(raw.slice(0, raw.lastIndexOf('}') + 1)).questions || []; } catch { }
+  let end = raw.length;
+  for (let t = 0; t < 60; t++) {
+    end = raw.lastIndexOf('}', end - 1);
+    if (end < 0) break;
+    try { return JSON.parse(raw.slice(0, end + 1) + ']}').questions || []; } catch { }
+  }
+  throw new Error('رد غير مكتمل من الذكاء الاصطناعي');
+}
+
+// يرسل جزء للسيرفر ويقرأ الرد أول بأول
+async function askQuiz(job, mode) {
+  const s = Auth.current();
+  const res = await fetch('/api/quiz', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + (s?.token || '') },
+    body: JSON.stringify({ ...job, mode })
+  });
+  if (!res.ok) {
+    let d = {};
+    try { d = await res.json(); } catch { }
+    if (res.status === 401) { Auth.logout(); showScreen('auth'); }
+    throw new Error(d.error || `صار خطأ في السيرفر (${res.status})`);
+  }
+  return parseQuestions(await res.text()).map(cleanQ).filter(Boolean);
+}
+
 $('#qFile').addEventListener('change', e => {
-  quiz.file = e.target.files[0] || null;
-  quiz.source = '';
-  $('#qFileName').textContent = quiz.file ? quiz.file.name : 'اضغط لاختيار ملف';
-  $('#dropZone').classList.toggle('has', !!quiz.file);
+  quiz.files = [...e.target.files].slice(0, QUIZ.MAX_FILES);
+  quiz.jobs = null;
+  const n = quiz.files.length;
+  if (e.target.files.length > QUIZ.MAX_FILES) toast(`بناخذ أول ${QUIZ.MAX_FILES} ملفات بس`, 'info');
+  $('#qFileName').textContent = !n ? 'اضغط لاختيار ملفات أو صور'
+    : n === 1 ? quiz.files[0].name
+    : `${n} ملفات: ` + quiz.files.map(f => f.name).join('، ');
+  $('#dropZone').classList.toggle('has', n > 0);
 });
 
 async function generateQuiz(mode) {
   if (quiz.busy) return;
   if (CONFIG.DEMO_MODE) return toast('صانع الكويز يشتغل بس على الموقع المنشور (يحتاج السيرفر)', 'err');
-  if (!quiz.file && !quiz.source) return toast('اختر ملف أول 📄', 'err');
+  if (!quiz.files.length && !quiz.jobs) return toast('اختر ملف أو صورة أول 📄', 'err');
 
   quiz.busy = true;
   quiz.mode = mode;
@@ -654,29 +774,36 @@ async function generateQuiz(mode) {
   btn.disabled = true;
 
   try {
-    if (!quiz.source) {
-      setProgress(5, 'نقرأ الملف...');
-      const text = (await extractText(quiz.file)).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-      if (text.length < 30) throw new Error('ما لقينا نص في الملف. إذا كان صور (سكان) ما نقدر نقرأه للحين');
-      if (text.length > QUIZ.MAX_CHARS) toast('الملف كبير، بناخذ أول 25 صفحة تقريباً', 'info');
-      quiz.source = text.slice(0, QUIZ.MAX_CHARS);
+    if (!quiz.jobs) {
+      setProgress(5, 'نقرأ الملفات...');
+      quiz.jobs = await buildJobs(quiz.files);
     }
 
-    const chunks = chunkText(quiz.source);
-    const all = [];
-    let failed = 0;
-    for (let i = 0; i < chunks.length; i++) {
-      setProgress(10 + Math.round((i / chunks.length) * 85), `الذكاء الاصطناعي يجهز الأسئلة... (${i + 1}/${chunks.length})`);
-      try {
-        const r = await api('quiz', { method: 'POST', body: { text: chunks[i], mode } });
-        all.push(...r.questions);
-      } catch (e) {
-        failed++;
-        if (/الحد اليومي|غير مفعّلة|سجّل دخول/.test(e.message)) throw e;
+    const chunks = quiz.jobs;
+    const results = [];
+    let next = 0, done = 0, failed = 0, lastErr = null, fatal = null;
+    setProgress(10, `الذكاء الاصطناعي يجهز الأسئلة... (0/${chunks.length})`);
+
+    const worker = async () => {
+      while (next < chunks.length && !fatal) {
+        const i = next++;
+        try {
+          results[i] = await askQuiz(chunks[i], mode);
+        } catch (e) {
+          failed++;
+          lastErr = e;
+          if (/الحد اليومي|غير مفعّلة|سجّل دخول/.test(e.message)) fatal = e;
+        }
+        done++;
+        setProgress(10 + Math.round((done / chunks.length) * 85), `الذكاء الاصطناعي يجهز الأسئلة... (${done}/${chunks.length})`);
       }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(QUIZ.PARALLEL, chunks.length) }, worker));
+    if (fatal) throw fatal;
 
-    if (!all.length) throw new Error('ما قدرنا نطلع أسئلة من الملف. تأكد إنه بنك أسئلة واضح');
+    const all = results.flat().filter(Boolean);
+    if (!all.length && lastErr) throw lastErr;
+    if (!all.length) throw new Error('ما قدرنا نطلع أسئلة من الملفات. تأكد إنها بنك أسئلة واضح');
     if (failed) toast(`تخطينا ${failed} جزء ما قدرنا نقرأه`, 'info');
 
     quiz.questions = prepare(all);
@@ -790,14 +917,15 @@ $('#quizRun').addEventListener('click', async e => {
     open.filter(q => !String(q.user || '').trim()).forEach(q => { q.score = 0; q.feedback = 'ما كتبت إجابة'; });
 
     try {
-      for (let i = 0; i < toAI.length; i += 30) {
-        const part = toAI.slice(i, i + 30);
+      const batches = [];
+      for (let i = 0; i < toAI.length; i += 8) batches.push(toAI.slice(i, i + 8));
+      await Promise.all(batches.map(async part => {
         const r = await api('grade', {
           method: 'POST',
           body: { items: part.map(q => ({ question: q.question, model: q.answer, answer: q.user })) }
         });
         part.forEach((q, k) => { q.score = r.results[k]?.score ?? 0; q.feedback = r.results[k]?.feedback || ''; });
-      }
+      }));
     } catch (err) {
       toAI.filter(q => q.score === undefined).forEach(q => { q.score = 0; q.feedback = 'ما قدرنا نصححها، قارن إجابتك بالنموذجية'; });
       toast(esc(err.message), 'err');

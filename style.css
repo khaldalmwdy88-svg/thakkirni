@@ -306,3 +306,9 @@ th{color:var(--muted);font-weight:700}
 .fb b{color:var(--gold)}
 .quiz-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:16px}
 @media (max-width:560px){.mode-pick{grid-template-columns:1fr}}
+
+/* مساحة شريط الحالة لما الموقع يفتح كتطبيق */
+@supports (padding-top: env(safe-area-inset-top)) {
+  body { padding-top: env(safe-area-inset-top); }
+  .topbar { top: calc(14px + env(safe-area-inset-top)); }
+}
