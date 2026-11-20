@@ -3,8 +3,8 @@
 import { json, err, readToken } from '../lib/util.mjs';
 import { askClaude, extractJSON, useQuota } from '../lib/ai.mjs';
 
-const MAX_ITEMS = 30;
-const DAILY_LIMIT = 60;
+const MAX_ITEMS = 10;
+const DAILY_LIMIT = 150;
 
 const SYSTEM = `You are a fair university grader. For each item compare the student's answer with the model answer.
 Judge by meaning, not exact wording. Ignore spelling mistakes. An empty answer scores 0.
@@ -35,7 +35,7 @@ export default async req => {
   }
 
   try {
-    const reply = await askClaude(SYSTEM, JSON.stringify({ items }), 2500);
+    const reply = await askClaude(SYSTEM, JSON.stringify({ items }), 1500);
     const data = extractJSON(reply);
     const raw = Array.isArray(data.results) ? data.results : [];
     const results = items.map((_, i) => {
