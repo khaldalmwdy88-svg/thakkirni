@@ -376,7 +376,7 @@ function itemHTML(t) {
     </div>
     <div class="acts">
       <button data-act="done" data-id="${t.id}" title="${t.done ? 'إرجاع' : 'تم'}">${t.done ? '↩️' : '✔️'}</button>
-      <button data-act="share" data-id="${t.id}" title="أرسل لقروب الشعبة">📤</button>
+      <button data-act="share" data-id="${t.id}" title="أرسل التذكير لأصحابك">📤</button>
       <button data-act="del" data-id="${t.id}" title="حذف">🗑️</button>
     </div>
   </div>`;
@@ -437,7 +437,7 @@ $('#list').addEventListener('click', e => {
     if (!t.done) toast('كفو! 💪 خلّصتها', 'ok');
   } else if (b.dataset.act === 'share') {
     const t = Tasks.all().find(x => x.id === id);
-    if (t) window.open(waLink(t), '_blank');
+    if (t) shareSheet(t);
     return;
   } else if (b.dataset.act === 'del') {
     if (!confirm('متأكد تبي تحذفه؟')) return;
@@ -538,23 +538,54 @@ $('#notifBtn').addEventListener('click', async () => {
   toast(p === 'granted' ? 'تم تفعيل الإشعارات 🔔' : 'ما تم التفعيل — بنذكرك داخل الموقع بس', p === 'granted' ? 'ok' : 'info');
 });
 
-// رسالة جاهزة لقروب الشعبة على واتساب (تنفتح من حساب واتساب اللي في جهازك)
-function waLink(t) {
+// رسالة واتساب جاهزة (تنفتح من حساب واتساب اللي في جهازك)
+// kind: 'group' لقروب الشعبة، 'friend' لصاحبك
+function waLink(t, kind = 'group') {
   const ty = TYPES[t.type] || TYPES.task;
-  const msg = [
-    '🔔 تذكير للشعبة',
-    `${ty.icon} ${ty.label} — ${t.subject}`,
-    t.title ? `📝 ${t.title}` : null,
-    `🗓️ الموعد: ${fmtDate(t.due)}`,
-    t.due > Date.now() ? `⏳ ${countdownText(t.due - Date.now())}` : null,
-    '',
-    `من موقع ذكّرني: ${location.origin}`
-  ].filter(l => l !== null).join('\n');
-  return 'https://wa.me/?text=' + encodeURIComponent(msg);
+  const left = t.due > Date.now() ? `⏳ ${countdownText(t.due - Date.now())}` : null;
+  const lines = kind === 'friend'
+    ? [
+        'هلا 👋 تذكير سريع:',
+        `ترى عندنا ${ty.label} ${t.subject} ${ty.icon}`,
+        t.title ? `📝 ${t.title}` : null,
+        `🗓️ ${fmtDate(t.due)}`,
+        left,
+        'لا تنساه 😉',
+        '',
+        `ذكّرني: ${location.origin}`
+      ]
+    : [
+        '🔔 تذكير للشعبة',
+        `${ty.icon} ${ty.label} — ${t.subject}`,
+        t.title ? `📝 ${t.title}` : null,
+        `🗓️ الموعد: ${fmtDate(t.due)}`,
+        left,
+        '',
+        `من موقع ذكّرني: ${location.origin}`
+      ];
+  return 'https://wa.me/?text=' + encodeURIComponent(lines.filter(l => l !== null).join('\n'));
+}
+
+// نافذة صغيرة: وين تبي ترسل التذكير؟
+function shareSheet(t) {
+  const el = document.createElement('div');
+  el.className = 'sheet';
+  el.innerHTML = `
+    <div class="sheet-box glass">
+      <b>وين تبي ترسل التذكير؟</b>
+      <small class="muted">${esc(t.subject)}${t.title ? ' — ' + esc(t.title) : ''}</small>
+      <a class="btn primary full" href="${waLink(t, 'group')}" target="_blank" rel="noopener">👥 قروب الشعبة</a>
+      <a class="btn ghost full" href="${waLink(t, 'friend')}" target="_blank" rel="noopener">💬 صاحبي</a>
+      <button class="btn ghost full" type="button">إلغاء</button>
+    </div>`;
+  el.addEventListener('click', e => {
+    if (e.target === el || e.target.closest('button') || e.target.closest('a')) el.remove();
+  });
+  document.body.appendChild(el);
 }
 
 function notify(title, body, task) {
-  const share = task ? `<br><a href="${waLink(task)}" target="_blank" rel="noopener" style="color:#25D366;font-weight:800">📤 أرسلها لقروب الشعبة</a>` : '';
+  const share = task ? `<br><a href="${waLink(task, 'group')}" target="_blank" rel="noopener" style="color:#25D366;font-weight:800">👥 للقروب</a> · <a href="${waLink(task, 'friend')}" target="_blank" rel="noopener" style="color:#25D366;font-weight:800">💬 لصاحبك</a>` : '';
   toast(`🔔 <b>${esc(title)}</b><br>${esc(body)}${share}`, 'info', task ? 20000 : 10000);
   if ('Notification' in window && Notification.permission === 'granted') {
     try { new Notification(title, { body, icon: 'assets/logo.svg' }); } catch { }
