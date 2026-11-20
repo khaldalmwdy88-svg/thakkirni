@@ -76,6 +76,10 @@
         </div>
       </div>
     </div>
+    <footer class="dev">
+      <span>👨‍💻 مطور الموقع: <b>خالد</b></span>
+      <a class="btn ghost sm" href="https://wa.me/966583911037?text=%D9%87%D9%84%D8%A7%20%D8%AE%D8%A7%D9%84%D8%AF%20%F0%9F%91%8B%20%D8%A8%D8%AE%D8%B5%D9%88%D8%B5%20%D9%85%D9%88%D9%82%D8%B9%20%D8%B0%D9%83%D9%91%D8%B1%D9%86%D9%8A%3A%20" target="_blank" rel="noopener">💬 تواصل معي</a>
+    </footer>
   </section>
 
   <!-- ===================== التطبيق ===================== -->
@@ -110,6 +114,15 @@
       <!-- أقرب موعد -->
       <div id="nextUp" class="next-up glass"></div>
 
+      <!-- ربط Blackboard (اختياري) -->
+      <details class="card glass bb-card" id="bbCard">
+        <summary>
+          <span>🔗 ربط واجبات Blackboard <small class="muted">(اختياري)</small></span>
+          <span class="bb-state" id="bbState">غير مربوط</span>
+        </summary>
+        <div class="bb-body" id="bbBody"></div>
+      </details>
+
       <div class="layout">
         <!-- نموذج الإضافة -->
         <form id="taskForm" class="card glass add-card" novalidate>
@@ -131,6 +144,18 @@
               <input type="time" id="fTime" value="08:00">
             </label>
           </div>
+          <div class="row">
+            <label>الدرجة <small class="muted">(اختياري)</small>
+              <input id="fGrade" placeholder="مثلاً: 10 درجات">
+            </label>
+            <span></span>
+          </div>
+          <label>ملاحظة <small class="muted">(اختياري)</small>
+            <div class="with-mic">
+              <textarea id="fNote" rows="2" placeholder="مثلاً: ابدأ فيه بعد الميد، أو اسأل الدكتور عن النقطة الثالثة"></textarea>
+              <button type="button" class="mic" data-target="fNote" title="سجّل بصوتك">🎙️</button>
+            </div>
+          </label>
           <label>ذكّرني قبلها بـ
             <select id="fRemind">
               <option value="60">ساعة</option>
@@ -168,6 +193,7 @@
 
         <div class="chat-input">
           <textarea id="planMsg" rows="2" placeholder="مثال: عندي اختبار فيزياء يوم الأحد، الفصول 21 إلى 25. الثلاثاء مضغوط والأربعاء عندي واجب"></textarea>
+          <button type="button" class="mic" data-target="planMsg" title="سجّل بصوتك">🎙️</button>
           <button class="btn primary" id="planSend" type="button">إرسال</button>
         </div>
 
@@ -209,11 +235,22 @@
       <!-- الكويز نفسه -->
       <section class="card glass quiz-run" id="quizRun" hidden></section>
 
+      <!-- مكتبة المواد -->
+      <section class="card glass library" id="library">
+        <h3>📚 مكتبة المواد</h3>
+        <p class="muted small">كويزات شاركها طلاب كل مادة. دوّر على مادتك وحل على طول، وتنافس مع زملاؤك 🏆</p>
+        <div id="libBody"></div>
+      </section>
+
       <!-- لوحة الأدمن -->
       <section id="adminPanel" class="card glass admin" hidden>
         <h3>👑 لوحة الأدمن</h3>
         <div id="adminContent"></div>
       </section>
+      <footer class="dev">
+        <span>👨‍💻 مطور الموقع: <b>خالد</b></span>
+        <a class="btn ghost sm" href="https://wa.me/966583911037?text=%D9%87%D9%84%D8%A7%20%D8%AE%D8%A7%D9%84%D8%AF%20%F0%9F%91%8B%20%D8%A8%D8%AE%D8%B5%D9%88%D8%B5%20%D9%85%D9%88%D9%82%D8%B9%20%D8%B0%D9%83%D9%91%D8%B1%D9%86%D9%8A%3A%20" target="_blank" rel="noopener">💬 تواصل معي</a>
+      </footer>
     </main>
   </section>
 

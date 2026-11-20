@@ -353,3 +353,58 @@ th{color:var(--muted);font-weight:700}
 .sheet-box a.btn{text-decoration:none;color:var(--text)}
 .sheet-box a.btn.primary{color:#1a1206}
 @media (min-width:700px){.sheet{align-items:center}}
+
+/* =========================================================
+   ملاحظة + درجة + مايك
+   ========================================================= */
+.with-mic{display:flex;gap:8px;align-items:stretch;margin-top:6px}
+.with-mic textarea{flex:1;margin:0;padding:12px 14px;border-radius:14px;background:rgba(0,0,0,.35);border:1px solid var(--border);color:inherit;font:inherit;resize:vertical;outline:none;min-height:52px}
+.with-mic textarea:focus{border-color:var(--gold);box-shadow:0 0 0 4px rgba(245,199,107,.15)}
+.mic{width:52px;flex:none;border-radius:14px;border:1px solid var(--border);background:rgba(0,0,0,.3);cursor:pointer;font-size:1.3rem;transition:.2s}
+.mic.on{background:rgba(248,113,113,.2);border-color:var(--red);animation:pulse 1.2s infinite}
+.item .note{margin-top:6px;font-size:.88rem;color:#e5e0ff;background:rgba(139,92,246,.12);border-radius:10px;padding:6px 10px;white-space:pre-wrap}
+.pill.grade{color:#c4b5fd;border-color:rgba(167,139,250,.4)}
+.pill.bb{color:#6ee7b7;border-color:rgba(52,211,153,.4)}
+
+/* =========================================================
+   ربط Blackboard
+   ========================================================= */
+.bb-card{margin-bottom:22px;padding:0}
+.bb-card summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:18px 22px;font-weight:800}
+.bb-card summary::-webkit-details-marker{display:none}
+.bb-state{font-size:.82rem;font-weight:700;padding:4px 12px;border-radius:999px;background:var(--glass2);border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.bb-state.on{color:var(--green);border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1)}
+.bb-body{padding:0 22px 22px}
+.warn{background:rgba(245,199,107,.1);border:1px solid rgba(245,199,107,.35);border-radius:14px;padding:12px 14px;font-size:.92rem;line-height:1.8;margin-bottom:14px}
+.steps{margin:0 0 14px;padding-inline-start:20px;color:#ddd8f0;font-size:.92rem;line-height:2}
+.bb-row{display:flex;gap:8px;flex-wrap:wrap}
+.bb-row input{flex:1;min-width:220px;margin:0}
+.bb-info{font-size:.92rem;color:#ddd8f0;line-height:1.9;margin-bottom:12px}
+.bb-info .err{color:var(--red)}
+
+/* =========================================================
+   مكتبة المواد
+   ========================================================= */
+.library{margin-top:22px}
+.library #libSearch{margin:0 0 14px}
+.lib-courses{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.lib-course{display:flex;flex-direction:column;gap:2px;text-align:right;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(0,0,0,.25);cursor:pointer;transition:.2s}
+.lib-course:hover{border-color:var(--gold);transform:translateY(-2px)}
+.lib-course b{font-size:1.1rem;color:var(--gold);text-align:right}
+.lib-course small{color:var(--muted)}
+.lib-course .empty,.lib-courses .empty{grid-column:1/-1}
+.lib-head{margin:14px 0}
+.lib-head h4{font-size:1.15rem}
+.lib-quiz{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(0,0,0,.25);margin-bottom:10px}
+.lib-quiz.hid{opacity:.5}
+.lib-quiz .acts{display:flex;gap:6px}
+.lb{margin-top:12px;text-align:right;background:rgba(0,0,0,.25);border-radius:14px;padding:10px 14px;font-size:.95rem;line-height:1.9}
+.lb .me{color:var(--gold);font-weight:800}
+.sheet-box label{margin:0;font-size:.9rem}
+.sheet-box input{margin-top:4px}
+
+/* مطور الموقع */
+.dev{display:flex;justify-content:center;align-items:center;gap:12px;flex-wrap:wrap;padding:26px 14px 34px;color:var(--muted);font-size:.92rem}
+.dev b{color:var(--gold)}
+.dev a.btn{text-decoration:none;color:#7ef0a8;border-color:rgba(37,211,102,.45)}
+#auth .dev{margin-top:-30px}

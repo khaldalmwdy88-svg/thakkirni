@@ -269,6 +269,8 @@ async function enterApp() {
   await Tasks.load();
   Mist.load();
   Planner.load();
+  BB.load();
+  Library.load();
 
   $('#userEmail').textContent = s.email;
   $('#adminBadge').hidden = !admin;
@@ -334,11 +336,15 @@ $('#taskForm').addEventListener('submit', e => {
     title: $('#fTitle').value.trim(),
     due,
     remind: +$('#fRemind').value,
+    note: $('#fNote').value.trim(),
+    grade: $('#fGrade').value.trim(),
     done: false,
     created: Date.now()
   });
   $('#fSubject').value = '';
   $('#fTitle').value = '';
+  $('#fNote').value = '';
+  $('#fGrade').value = '';
   toast(`${TYPES[state.type].icon} تمت إضافة ${TYPES[state.type].label} <b>${esc(subject)}</b>`, 'ok');
   render();
   checkReminders();
@@ -370,9 +376,12 @@ function itemHTML(t) {
       ${t.title ? `<div class="ttl">${esc(t.title)}</div>` : ''}
       <div class="meta">
         <span class="pill type">${ty.label}</span>
+        ${t.grade ? `<span class="pill grade">🎯 ${esc(t.grade)}</span>` : ''}
+        ${t.src === 'bb' ? '<span class="pill bb">🔗 Blackboard</span>' : ''}
         <span class="pill">🗓️ ${fmtDate(t.due)}</span>
         ${t.done ? '<span class="pill ok">✔ منجز</span>' : `<span class="pill ${cls}">${countdownText(left)}</span>`}
       </div>
+      ${t.note ? `<div class="note">📌 ${esc(t.note)}</div>` : ''}
     </div>
     <div class="acts">
       <button data-act="done" data-id="${t.id}" title="${t.done ? 'إرجاع' : 'تم'}">${t.done ? '↩️' : '✔️'}</button>
@@ -387,7 +396,7 @@ function render() {
   renderTypePicker();
   renderFilters();
 
-  const all = Tasks.all();
+  const all = Tasks.all().filter(t => !t.hidden);
   const now = Date.now();
   const open = all.filter(t => !t.done);
 
@@ -441,7 +450,10 @@ $('#list').addEventListener('click', e => {
     return;
   } else if (b.dataset.act === 'del') {
     if (!confirm('متأكد تبي تحذفه؟')) return;
-    Tasks.remove(id);
+    const t = Tasks.all().find(x => x.id === id);
+    // تذكيرات Blackboard نخفيها بدل ما نحذفها، عشان المزامنة ما ترجّعها
+    if (t?.src === 'bb') Tasks.update(id, { hidden: true });
+    else Tasks.remove(id);
     toast('انحذف 🗑️', 'info');
   }
   render();
@@ -450,7 +462,7 @@ $('#list').addEventListener('click', e => {
 /* ---------- أقرب موعد (عدّاد) ---------- */
 function renderNextUp() {
   const now = Date.now();
-  const next = Tasks.all().filter(t => !t.done && t.due > now).sort((a, b) => a.due - b.due)[0];
+  const next = Tasks.all().filter(t => !t.done && !t.hidden && t.due > now).sort((a, b) => a.due - b.due)[0];
   const box = $('#nextUp');
   if (!next) {
     box.innerHTML = `<div><div class="lbl">أقرب موعد</div><div class="nm">مافي شي قريب — استمتع ☕</div></div>`;
@@ -548,6 +560,7 @@ function waLink(t, kind = 'group') {
         'هلا 👋 تذكير سريع:',
         `ترى عندنا ${ty.label} ${t.subject} ${ty.icon}`,
         t.title ? `📝 ${t.title}` : null,
+        t.grade ? `🎯 عليه ${t.grade}` : null,
         `🗓️ ${fmtDate(t.due)}`,
         left,
         'لا تنساه 😉',
@@ -558,6 +571,7 @@ function waLink(t, kind = 'group') {
         '🔔 تذكير للشعبة',
         `${ty.icon} ${ty.label} — ${t.subject}`,
         t.title ? `📝 ${t.title}` : null,
+        t.grade ? `🎯 الدرجة: ${t.grade}` : null,
         `🗓️ الموعد: ${fmtDate(t.due)}`,
         left,
         '',
@@ -597,10 +611,10 @@ function checkReminders() {
   const now = Date.now();
   let changed = false;
   const list = Tasks.all().map(t => {
-    if (t.done) return t;
+    if (t.done || t.hidden) return t;
     const ty = TYPES[t.type] || TYPES.task;
     if (!t.n1 && now >= t.due - t.remind * 60000 && now < t.due) {
-      notify(`${ty.icon} تذكير: ${ty.label} ${t.subject}`, `${countdownText(t.due - now)} — ${fmtDate(t.due)}`, t);
+      notify(`${ty.icon} تذكير: ${ty.label} ${t.subject}`, `${countdownText(t.due - now)} — ${fmtDate(t.due)}${t.note ? `\n📌 ${t.note}` : ''}`, t);
       t.n1 = true; changed = true;
     }
     if (!t.n2 && now >= t.due && now - t.due < 3600000) {
@@ -625,7 +639,7 @@ const QUIZ = {
   IMG_SIZE: 1600,     // نصغّر الصور لهالحجم قبل الإرسال
   MAX_Q: 80
 };
-const quiz = { files: [], jobs: null, mode: 'same', questions: [], graded: false, busy: false, isBank: false };
+const quiz = { files: [], jobs: null, mode: 'same', questions: [], graded: false, busy: false, isBank: false, lib: null, title: '' };
 
 const shuffle = a => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const QTYPE = { mcq: 'اختيار من متعدد', tf: 'صح أو خطأ', short: 'إجابة قصيرة', essay: 'مقالي' };
@@ -863,6 +877,8 @@ async function generateQuiz(mode) {
     if (failed) toast(`تخطينا ${failed} جزء ما قدرنا نقرأه`, 'info');
 
     quiz.isBank = false;
+    quiz.lib = null;
+    quiz.title = quiz.files.map(f => f.name.replace(/\.[^.]+$/, '')).join('، ').slice(0, 100);
     quiz.questions = prepare(all);
     quiz.graded = false;
     setProgress(100, 'جاهز!');
@@ -889,8 +905,8 @@ function renderQuiz(scoreText = '') {
 
   box.innerHTML = `
     <div class="quiz-head">
-      <h3>${quiz.isBank ? '📕 بنك الأخطاء' : '📝 الكويز'} (${quiz.questions.length} سؤال)</h3>
-      <span class="pill">${quiz.isBank ? 'اللي تصححه ينحذف من البنك' : quiz.mode === 'vary' ? '🔀 أرقام وصياغة جديدة' : '📋 نفس الأسئلة'}</span>
+      <h3>${quiz.isBank ? '📕 بنك الأخطاء' : quiz.lib ? `📚 ${esc(quiz.lib.title)}` : '📝 الكويز'} (${quiz.questions.length} سؤال)</h3>
+      <span class="pill">${quiz.isBank ? 'اللي تصححه ينحذف من البنك' : quiz.lib ? `من مكتبة ${esc(quiz.lib.code)}` : quiz.mode === 'vary' ? '🔀 أرقام وصياغة جديدة' : '📋 نفس الأسئلة'}</span>
     </div>
     ${scoreText}
     ${quiz.questions.map((q, i) => {
@@ -924,7 +940,8 @@ function renderQuiz(scoreText = '') {
         ${quiz.isBank
           ? (Mist.list.length ? `<button class="btn primary" data-qa="bank">📕 كمّل الأخطاء الباقية (${Mist.list.length})</button>` : '')
           : `<button class="btn primary" data-qa="again">🔁 نفس الكويز بترتيب جديد</button>
-             <button class="btn ghost" data-qa="vary">🔀 نسخة بأرقام جديدة</button>`}
+             ${quiz.lib ? '' : `<button class="btn ghost" data-qa="vary">🔀 نسخة بأرقام جديدة</button>
+             <button class="btn ghost" data-qa="share">📚 شاركه في المكتبة</button>`}`}
         <button class="btn ghost" data-qa="close">✖ إغلاق</button>
       ` : `
         <button class="btn primary" data-qa="grade">✅ صحّح إجاباتي</button>
@@ -958,6 +975,7 @@ $('#quizRun').addEventListener('click', async e => {
   }
   if (act === 'vary') { generateQuiz('vary'); return; }
   if (act === 'bank') { openBank(); return; }
+  if (act === 'share') { Library.shareForm(); return; }
 
   if (act === 'grade') {
     const unanswered = quiz.questions.filter(q => q.user === undefined || q.user === '').length;
@@ -1006,7 +1024,15 @@ $('#quizRun').addEventListener('click', async e => {
     const total = quiz.questions.reduce((s, q) => s + (q.score || 0), 0);
     const pct = Math.round((total / quiz.questions.length) * 100);
     const msg = pct >= 90 ? 'أسطوري! 🏆' : pct >= 75 ? 'ممتاز 💪' : pct >= 50 ? 'زين، راجع الغلط 📚' : 'لا تيأس، جرّب مرة ثانية 🔁';
-    renderQuiz(`<div class="score-box"><b>${pct}%</b>${total} من ${quiz.questions.length} — ${msg}${bankNote}</div>`);
+    let lbNote = '';
+    if (quiz.lib && !CONFIG.DEMO_MODE) {
+      try {
+        const r = await api('library', { method: 'POST', body: { action: 'score', code: quiz.lib.code, id: quiz.lib.id, score: pct } });
+        lbNote = `<div class="lb"><b>🏆 لوحة الترتيب</b>${r.top.map((t, i) => `<div class="${t.me ? 'me' : ''}">${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'} ${esc(t.name)}${t.me ? ' (أنت)' : ''} — ${t.score}%</div>`).join('')}${r.rank > 5 ? `<div class="me">ترتيبك: ${r.rank}</div>` : ''}</div>`;
+      } catch { }
+    }
+    const shareHint = !quiz.isBank && !quiz.lib ? '<br>💡 عجبك الكويز؟ شاركه في المكتبة عشان يستفيد زملاؤك 👇' : '';
+    renderQuiz(`<div class="score-box"><b>${pct}%</b>${total} من ${quiz.questions.length} — ${msg}${bankNote}${shareHint}${lbNote}</div>`);
     $('#quizRun').scrollIntoView({ behavior: 'smooth' });
   }
 });
@@ -1072,6 +1098,7 @@ const Mist = {
 function openBank() {
   if (!Mist.list.length) return toast('بنك أخطائك فاضي 👌 حل كويز وأي سؤال تغلط فيه بينحفظ هنا', 'info', 5000);
   quiz.isBank = true;
+  quiz.lib = null;
   quiz.graded = false;
   // الأسئلة اللي غلط فيها أكثر تطلع أول
   const sorted = [...Mist.list].sort((a, b) => (b.misses || 1) - (a.misses || 1)).slice(0, 40);
@@ -1183,10 +1210,10 @@ const Planner = {
     this.render();
 
     const now = new Date();
-    const tasks = Tasks.all().filter(t => !t.done && t.due > Date.now() - 86400000).map(t => ({
+    const tasks = Tasks.all().filter(t => !t.done && !t.hidden && t.due > Date.now() - 86400000).map(t => ({
       type: (TYPES[t.type] || TYPES.task).label,
       subject: t.subject,
-      title: t.title,
+      title: [t.title, t.grade ? `(${t.grade})` : '', t.note ? `ملاحظة: ${t.note}` : ''].filter(Boolean).join(' '),
       due: `${isoDay(new Date(t.due))} ${new Date(t.due).toTimeString().slice(0, 5)}`
     }));
 
@@ -1272,6 +1299,270 @@ $('#planFile').addEventListener('change', async e => {
   }
   e.target.value = '';
   Planner.render();
+});
+
+
+
+/* =========================================================
+   📚 مكتبة المواد
+   ========================================================= */
+const Library = {
+  courses: [],
+  current: null, // { course, quizzes }
+  async load() {
+    if (CONFIG.DEMO_MODE) { this.render(); return; }
+    try { this.courses = (await api('library?action=courses')).courses || []; } catch { }
+    this.render();
+  },
+  render() {
+    const box = $('#libBody');
+    if (this.current) return this.renderCourse();
+    const q = ($('#libSearch')?.value || '').trim().toLowerCase();
+    const list = this.courses.filter(c => !q || c.code.toLowerCase().includes(q.replace(/\s/g, '')) || c.name.toLowerCase().includes(q));
+    box.innerHTML = `
+      <input id="libSearch" placeholder="🔎 دوّر على مادة: IE200، فيزياء..." value="${esc(q)}">
+      <div class="lib-courses">
+        ${list.length ? list.map(c => `
+          <button class="lib-course" data-code="${esc(c.code)}" type="button">
+            <b dir="ltr">${esc(c.code)}</b>
+            <span>${esc(c.name)}</span>
+            <small>${c.count} كويز</small>
+          </button>`).join('')
+        : `<div class="empty"><span>📚</span>${this.courses.length ? 'ما لقينا مادة بهالاسم' : 'المكتبة فاضية للحين. حل كويز وشاركه، وكن أول واحد 🚀'}</div>`}
+      </div>`;
+    const inp = $('#libSearch');
+    inp.addEventListener('input', () => { const pos = inp.selectionStart; this.render(); const n = $('#libSearch'); n.focus(); n.setSelectionRange(pos, pos); });
+  },
+  async openCourse(code) {
+    try {
+      this.current = await api('library?action=course&code=' + encodeURIComponent(code));
+      this.renderCourse();
+    } catch (e) { toast(esc(e.message), 'err'); }
+  },
+  renderCourse() {
+    const { course, quizzes } = this.current;
+    $('#libBody').innerHTML = `
+      <button class="btn ghost sm" data-lib="back" type="button">→ رجوع للمواد</button>
+      <div class="lib-head">
+        <h4><span dir="ltr">${esc(course?.code || '')}</span> — ${esc(course?.name || '')}</h4>
+        ${course?.info ? `<p class="muted small">${esc(course.info)}</p>` : ''}
+      </div>
+      ${quizzes.length ? quizzes.map(q => `
+        <div class="lib-quiz ${q.hidden ? 'hid' : ''}">
+          <div>
+            <b>${esc(q.title)}</b>
+            <div class="muted small">${q.n} سؤال · شاركه ${esc(q.by)} · ${fmtShort(q.at)} · انحل ${q.plays} مرة
+              ${q.top[0] ? ` · 🏆 أعلى درجة ${q.top[0].score}%` : ''}${q.hidden ? ' · 🚫 مخفي بسبب بلاغات' : ''}</div>
+          </div>
+          <div class="acts">
+            <button class="btn primary sm" data-lib="play" data-id="${q.id}" type="button">▶️ حل</button>
+            ${q.mine || state.admin ? `<button class="btn ghost sm" data-lib="del" data-id="${q.id}" type="button">🗑️</button>` : `<button class="btn ghost sm" data-lib="report" data-id="${q.id}" type="button" title="بلّغ عن كويز فيه غلط أو محتوى غير مناسب">🚩</button>`}
+            ${q.hidden && state.admin ? `<button class="btn ghost sm" data-lib="restore" data-id="${q.id}" type="button">♻️</button>` : ''}
+          </div>
+        </div>`).join('') : '<div class="empty"><span>📭</span>ما فيه كويزات في هالمادة للحين</div>'}`;
+  },
+  async play(id) {
+    const code = this.current.course.code;
+    try {
+      const r = await api(`library?action=quiz&code=${encodeURIComponent(code)}&id=${encodeURIComponent(id)}`);
+      if (!r.questions.length) return toast('الكويز فاضي', 'err');
+      quiz.isBank = false;
+      quiz.lib = { code, id, title: r.quiz.title };
+      quiz.graded = false;
+      quiz.questions = prepare(r.questions);
+      renderQuiz();
+      $('#quizRun').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) { toast(esc(e.message), 'err'); }
+  },
+  async action(act, id) {
+    const code = this.current.course.code;
+    if (act === 'report' && !confirm('تبلّغ عن هالكويز؟ (فيه أسئلة غلط أو محتوى غير مناسب)')) return;
+    if (act === 'del' && !confirm('تبي تحذف هالكويز من المكتبة؟')) return;
+    try {
+      await api('library', { method: 'POST', body: { action: act === 'del' ? 'delete' : act, code, id } });
+      toast(act === 'report' ? 'شكراً، وصلنا بلاغك 🙏' : act === 'del' ? 'انحذف 🗑️' : 'رجع ظاهر ♻️', 'ok');
+      await this.openCourse(code);
+      this.load();
+    } catch (e) { toast(esc(e.message), 'err'); }
+  },
+
+  // نافذة مشاركة الكويز
+  shareForm() {
+    if (CONFIG.DEMO_MODE) return toast('المكتبة تشتغل بس على الموقع المنشور', 'err');
+    const el = document.createElement('div');
+    el.className = 'sheet';
+    el.innerHTML = `
+      <form class="sheet-box glass" novalidate>
+        <b>📚 شارك الكويز في المكتبة</b>
+        <small class="muted">زملاؤك في المادة بيقدرون يحلونه. اسمك يطلع مختصر.</small>
+        <label>رمز المادة<input name="code" dir="ltr" list="libCodes" placeholder="IE200" required></label>
+        <datalist id="libCodes">${this.courses.map(c => `<option value="${esc(c.code)}">${esc(c.name)}</option>`).join('')}</datalist>
+        <label>اسم المادة<input name="name" placeholder="مهارات الاتصال التقنية"></label>
+        <label>نبذة عن المادة <small class="muted">(اختياري)</small><input name="info" placeholder="مثلاً: الدكتور، الفصول، نصايح"></label>
+        <label>عنوان الكويز<input name="title" value="${esc(quiz.title || '')}" placeholder="مثلاً: أسئلة الفصل 3"></label>
+        <button class="btn primary full" type="submit">شارك 🚀</button>
+        <button class="btn ghost full" type="button" data-x>إلغاء</button>
+      </form>`;
+    const form = el.querySelector('form');
+    form.code.addEventListener('input', () => {
+      const c = this.courses.find(x => x.code === form.code.value.toUpperCase().replace(/[\s_\-]/g, ''));
+      if (c) { form.name.value = c.name; form.info.placeholder = c.info || form.info.placeholder; }
+    });
+    el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-x]')) el.remove(); });
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const btn = form.querySelector('[type=submit]');
+      btn.disabled = true;
+      try {
+        const questions = quiz.questions.map(({ user, score, feedback, bankId, ...q }) => q);
+        const r = await api('library', { method: 'POST', body: {
+          action: 'share', code: form.code.value, name: form.name.value, info: form.info.value, title: form.title.value, questions
+        } });
+        el.remove();
+        toast(`🎉 انضاف الكويز لمكتبة ${esc(r.code)}! أرسل الرابط لزملاؤك`, 'ok', 6000);
+        await this.load();
+      } catch (err) {
+        toast(esc(err.message), 'err', 6000);
+        btn.disabled = false;
+      }
+    });
+    document.body.appendChild(el);
+    form.code.focus();
+  }
+};
+
+$('#libBody').addEventListener('click', e => {
+  const c = e.target.closest('.lib-course');
+  if (c) return Library.openCourse(c.dataset.code);
+  const b = e.target.closest('[data-lib]');
+  if (!b) return;
+  if (b.dataset.lib === 'back') { Library.current = null; Library.render(); return; }
+  if (b.dataset.lib === 'play') return Library.play(b.dataset.id);
+  Library.action(b.dataset.lib, b.dataset.id);
+});
+
+/* =========================================================
+   🔗 ربط واجبات Blackboard (اختياري)
+   ========================================================= */
+const BB = {
+  status: { linked: false },
+  busy: false,
+  async load() {
+    if (CONFIG.DEMO_MODE) return this.render();
+    try { this.status = await api('bb'); } catch { }
+    this.render();
+  },
+  render() {
+    const s = this.status;
+    const st = $('#bbState');
+    st.textContent = s.linked ? '✅ مربوط' : 'غير مربوط';
+    st.classList.toggle('on', !!s.linked);
+    const warn = `<div class="warn">⚠️ <b>تنبيه:</b> لما تربط، كل الواجبات والاختبارات اللي في Blackboard بتنضاف هنا تلقائياً كتذكيرات، وعليها علامة <b>🔗 Blackboard</b>. وتتحدّث مرتين في اليوم، وإذا الدكتور غيّر موعد يتغيّر عندك. وتقدر تحذف أي تذكير ما تبيه، وما يرجع.</div>`;
+    if (!s.linked) {
+      $('#bbBody').innerHTML = `${warn}
+        <ol class="steps">
+          <li>افتح Blackboard، ثم <b>Calendar</b></li>
+          <li>اضغط الترس <b>⚙️</b>، ثم النقاط <b>•••</b>، ثم <b>Share calendar</b></li>
+          <li>انسخ الرابط (يبدأ بـ https وآخره .ics) والصقه هنا 👇</li>
+        </ol>
+        <div class="bb-row">
+          <input id="bbUrl" dir="ltr" placeholder="https://.../calendar.ics" autocomplete="off">
+          <button class="btn primary" id="bbLink" type="button">اربط 🔗</button>
+        </div>
+        <p class="muted small">🔒 الرابط خاص فيك. نحفظه بشكل آمن ولا أحد يشوفه غيرك.</p>`;
+    } else {
+      const r = s.result || {};
+      $('#bbBody').innerHTML = `${warn}
+        <div class="bb-info">
+          📡 مربوط بـ <b dir="ltr">${esc(s.host)}</b><br>
+          🕐 آخر تحديث: ${s.lastSync ? fmtShort(s.lastSync) : '—'}<br>
+          📚 لقينا ${r.found ?? 0} واجب واختبار قادم${r.added ? ` · انضاف ${r.added} جديد` : ''}${r.updated ? ` · تحدّث ${r.updated}` : ''}
+          ${s.error ? `<br><span class="err">⚠️ ${esc(s.error)}</span>` : ''}
+        </div>
+        <div class="bb-row">
+          <button class="btn ghost" id="bbRefresh" type="button">🔄 حدّث الحين</button>
+          <button class="btn ghost" id="bbUnlink" type="button">❌ إلغاء الربط</button>
+        </div>`;
+    }
+  },
+  async call(method, body, okMsg) {
+    if (this.busy) return;
+    if (CONFIG.DEMO_MODE) return toast('الربط يشتغل بس على الموقع المنشور', 'err');
+    this.busy = true;
+    $$('#bbBody button').forEach(b => b.disabled = true);
+    try {
+      this.status = await api('bb', { method, body });
+      await Tasks.load();
+      render();
+      if (okMsg) toast(okMsg(this.status), 'ok', 5000);
+    } catch (e) {
+      toast(esc(e.message), 'err', 6000);
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+};
+
+$('#bbBody').addEventListener('click', e => {
+  const id = e.target.closest('button')?.id;
+  if (id === 'bbLink') {
+    const url = $('#bbUrl').value.trim();
+    if (!url) return toast('الصق رابط التقويم أول', 'err');
+    BB.call('POST', { url }, s => `🔗 تم الربط! لقينا ${s.result?.found ?? 0} واجب واختبار`);
+  } else if (id === 'bbRefresh') {
+    BB.call('POST', { refresh: true }, s => `🔄 تحدّث${s.result?.added ? ` · ${s.result.added} جديد` : ''}`);
+  } else if (id === 'bbUnlink') {
+    if (!confirm('تبي تلغي ربط Blackboard؟')) return;
+    const removeTasks = confirm('تبي نحذف بعد التذكيرات اللي جت من Blackboard؟\n(موافق = نحذفها، إلغاء = نخليها)');
+    BB.call('DELETE', { removeTasks }, () => 'انلغى الربط');
+  }
+});
+
+/* =========================================================
+   🎙️ تسجيل صوتي يتحول لنص
+   ========================================================= */
+const Voice = {
+  rec: null,
+  btn: null,
+  start(btn) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      return toast('متصفحك ما يدعم التسجيل هنا. استخدم زر المايك 🎙️ اللي في الكيبورد حقك', 'info', 6000);
+    }
+    if (this.rec) return this.stop();
+    const target = document.getElementById(btn.dataset.target);
+    const base = target.value ? target.value.trimEnd() + ' ' : '';
+    const rec = new SR();
+    rec.lang = 'ar-SA';
+    rec.interimResults = true;
+    rec.continuous = true;
+    rec.onresult = e => {
+      let text = '';
+      for (const r of e.results) text += r[0].transcript;
+      target.value = base + text;
+    };
+    rec.onerror = e => {
+      if (e.error === 'not-allowed') toast('اسمح للموقع يستخدم المايك من إعدادات المتصفح', 'err', 6000);
+      else if (e.error !== 'aborted' && e.error !== 'no-speech') toast('صار خطأ في التسجيل، جرّب مرة ثانية', 'err');
+    };
+    rec.onend = () => this.reset();
+    this.rec = rec;
+    this.btn = btn;
+    btn.classList.add('on');
+    btn.textContent = '⏹️';
+    try { rec.start(); toast('🎙️ تكلم الحين... واضغط ⏹️ إذا خلصت', 'info', 3000); } catch { this.reset(); }
+  },
+  stop() { try { this.rec?.stop(); } catch { } this.reset(); },
+  reset() {
+    if (this.btn) { this.btn.classList.remove('on'); this.btn.textContent = '🎙️'; }
+    this.rec = null;
+    this.btn = null;
+  }
+};
+document.addEventListener('click', e => {
+  const b = e.target.closest('button.mic[data-target]');
+  if (b) { e.preventDefault(); Voice.start(b); }
 });
 
 /* ---------- التشغيل ---------- */
