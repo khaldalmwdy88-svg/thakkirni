@@ -1,5 +1,6 @@
 // الاتصال بـ Claude + حدود الاستخدام اليومية
 import { store, keyOf, env, isAdmin } from './util.mjs';
+import { aiUsage } from './stats.mjs';
 
 export async function askClaude(system, user, maxTokens = 4000) {
   const key = env('ANTHROPIC_API_KEY');
@@ -25,6 +26,7 @@ export async function askClaude(system, user, maxTokens = 4000) {
     console.error('anthropic error', res.status, JSON.stringify(data));
     throw new Error('AI_FAIL');
   }
+  await aiUsage(data.usage);
   return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
@@ -79,6 +81,7 @@ export async function streamClaude(system, content, maxTokens = 4000) {
       const reader = upstream.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
+      const usage = { input_tokens: 0, output_tokens: 0 };
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -93,6 +96,10 @@ export async function streamClaude(system, content, maxTokens = 4000) {
               const ev = JSON.parse(line.slice(5));
               if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
                 controller.enqueue(enc.encode(ev.delta.text));
+              } else if (ev.type === 'message_start') {
+                usage.input_tokens = ev.message?.usage?.input_tokens || 0;
+              } else if (ev.type === 'message_delta' && ev.usage) {
+                usage.output_tokens = ev.usage.output_tokens || usage.output_tokens;
               }
             } catch { /* سطر ناقص */ }
           }
@@ -100,6 +107,7 @@ export async function streamClaude(system, content, maxTokens = 4000) {
       } catch (e) {
         console.error('stream error', e);
       }
+      await aiUsage(usage);
       controller.close();
     }
   });

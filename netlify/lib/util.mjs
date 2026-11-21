@@ -10,10 +10,10 @@ export const keyOf = email => encodeURIComponent(email.toLowerCase());
 export const isEmail = e =>
   typeof e === 'string' && e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
-export const json = (data, status = 200) =>
+export const json = (data, status = 200, extra = {}) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extra }
   });
 export const err = (msg, status = 400) => json({ error: msg }, status);
 
@@ -28,15 +28,22 @@ export const safeEq = (a, b) =>
 // الرمز ما ينحفظ كنص — ينحفظ بصمته (hash) بس
 export const hashCode = (email, code) => hmac(`otp:${email}:${code}`);
 
-// توكن الجلسة: بيانات + توقيع، صالح 30 يوم
-export function signToken(email, days = 30) {
+// توكن الجلسة: بيانات + توقيع، صالح 180 يوم ويتجدد كل ما فتح الموقع
+export const SESSION_DAYS = 180;
+export function signToken(email, days = SESSION_DAYS) {
   const p = Buffer.from(JSON.stringify({ email, exp: Date.now() + days * 864e5 })).toString('base64url');
   return `${p}.${hmac(p)}`;
 }
 
+// كوكي الجلسة: يحفظها السيرفر (HttpOnly)، وسفاري ما يمسحها بعد 7 أيام زي localStorage
+export const sessionCookie = token =>
+  `thk=${token}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly; Secure; SameSite=Lax`;
+export const clearCookie = 'thk=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax';
+
 export function readToken(req) {
   const h = req.headers.get('authorization') || '';
-  const t = h.startsWith('Bearer ') ? h.slice(7) : '';
+  let t = h.startsWith('Bearer ') ? h.slice(7) : '';
+  if (!t || t === 'null') t = (req.headers.get('cookie') || '').match(/(?:^|;\s*)thk=([^;]+)/)?.[1] || '';
   const [p, s] = t.split('.');
   if (!p || !s || !safeEq(hmac(p), s)) return null;
   try {
@@ -50,3 +57,10 @@ export const isAdmin = email => !!email && email.toLowerCase() === env('ADMIN_EM
 export const TYPES = {
   quiz: 'كويز', exam: 'اختبار', task: 'تاسك', hw: 'واجب', project: 'مشروع', lab: 'لاب'
 };
+
+// إعدادات الموقع اللي يتحكم فيها الأدمن (رفع الملفات، الواتساب)
+export const DEFAULT_SETTINGS = { uploads: true, wa: true };
+export async function getSettings() {
+  try { return { ...DEFAULT_SETTINGS, ...((await store('settings').get('site', { type: 'json' })) || {}) }; }
+  catch { return { ...DEFAULT_SETTINGS }; }
+}
