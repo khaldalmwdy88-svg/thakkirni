@@ -22,6 +22,24 @@ const TYPES = {
   lab:     { label: 'لاب',    icon: '🧪', color: '#ec4899' }
 };
 
+// الجامعات (نفس القائمة في netlify/lib/unis.mjs)
+const UNIS = [
+  ['kau', 'جامعة الملك عبدالعزيز'], ['ksu', 'جامعة الملك سعود'], ['kfupm', 'جامعة الملك فهد للبترول والمعادن'],
+  ['uqu', 'جامعة أم القرى'], ['uj', 'جامعة جدة'], ['imamu', 'جامعة الإمام محمد بن سعود الإسلامية'],
+  ['iau', 'جامعة الإمام عبدالرحمن بن فيصل'], ['pnu', 'جامعة الأميرة نورة بنت عبدالرحمن'], ['kfu', 'جامعة الملك فيصل'],
+  ['kku', 'جامعة الملك خالد'], ['qu', 'جامعة القصيم'], ['taibahu', 'جامعة طيبة'], ['tu', 'جامعة الطائف'],
+  ['iu', 'الجامعة الإسلامية بالمدينة المنورة'], ['jazanu', 'جامعة جازان'], ['nu', 'جامعة نجران'], ['ut', 'جامعة تبوك'],
+  ['uoh', 'جامعة حائل'], ['ju', 'جامعة الجوف'], ['nbu', 'جامعة الحدود الشمالية'], ['bu', 'جامعة الباحة'],
+  ['ub', 'جامعة بيشة'], ['uhb', 'جامعة حفر الباطن'], ['psau', 'جامعة الأمير سطام بن عبدالعزيز'], ['mu', 'جامعة المجمعة'],
+  ['su', 'جامعة شقراء'], ['ksau', 'جامعة الملك سعود بن عبدالعزيز للعلوم الصحية'], ['seu', 'الجامعة السعودية الإلكترونية'],
+  ['kaust', 'جامعة الملك عبدالله للعلوم والتقنية (كاوست)'], ['tvtc', 'الكليات التقنية (التدريب التقني والمهني)'],
+  ['psu', 'جامعة الأمير سلطان'], ['alfaisal', 'جامعة الفيصل'], ['pmu', 'جامعة الأمير محمد بن فهد'], ['effat', 'جامعة عفت'],
+  ['dah', 'جامعة دار الحكمة'], ['ubt', 'جامعة الأعمال والتكنولوجيا'], ['yu', 'جامعة اليمامة'], ['dau', 'جامعة دار العلوم'],
+  ['riyadhelm', 'جامعة رياض العلم'], ['fbsu', 'جامعة فهد بن سلطان'], ['upm', 'جامعة الأمير مقرن بن عبدالعزيز'],
+  ['other', 'جامعة أخرى']
+];
+const UNI_NAME = Object.fromEntries(UNIS);
+
 /* ---------- أدوات ---------- */
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -55,7 +73,9 @@ function toast(html, kind = 'ok', ms = 4000) {
   const t = document.createElement('div');
   t.className = `toast ${kind}`;
   t.innerHTML = html;
-  $('#toasts').appendChild(t);
+  const box = $('#toasts');
+  box.appendChild(t);
+  while (box.children.length > 3) box.firstElementChild.remove(); // ما نكدّس تنبيهات
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, ms);
 }
 
@@ -74,7 +94,7 @@ async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch('/api/' + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   let data = {};
   try { data = await res.json(); } catch { }
-  if (res.status === 401 && path !== 'verify-code') {
+  if (res.status === 401 && path !== 'verify-code' && path !== 'session') {
     Auth.logout();
     showScreen('auth');
   }
@@ -118,7 +138,7 @@ const Auth = {
 };
 
 /* ---------- المهام ---------- */
-const state = { email: null, admin: false, type: 'quiz', filter: 'all' };
+const state = { email: null, admin: false, type: 'quiz', filter: 'all', view: 'home', profile: null };
 
 const Tasks = {
   list: [],
@@ -128,7 +148,9 @@ const Tasks = {
     const cached = Store.get(this.key(), []);
     if (CONFIG.DEMO_MODE) { this.list = cached; return; }
     try {
-      this.list = (await api('tasks')).tasks;
+      const r = await api('tasks');
+      this.list = r.tasks;
+      if (r.profile) Profile.set(r.profile);
       Store.set(this.key(), this.list);
     } catch (e) {
       this.list = cached; // بدون نت: نعرض آخر نسخة محفوظة
@@ -266,15 +288,16 @@ async function enterApp() {
   state.email = s.email;
   state.admin = !!s.admin;
   const admin = state.admin;
+  if (CONFIG.DEMO_MODE) Profile.set(Store.get('thk_profile_' + s.email, null) || { uni: null, wa: { ready: false } });
   await Tasks.load();
   Mist.load();
   Planner.load();
   BB.load();
-  Library.load();
 
   $('#userEmail').textContent = s.email;
+  $('#meAvatar').textContent = s.email[0].toUpperCase();
   $('#adminBadge').hidden = !admin;
-  $('#adminPanel').hidden = !admin;
+  $('#adminTab').hidden = !admin;
 
   const h = new Date().getHours();
   const name = s.email.split('@')[0];
@@ -288,14 +311,20 @@ async function enterApp() {
   updateNotifBtn();
   showScreen('app');
   render();
+  if (state.profile?.uni) Library.load();
+  View.go(View.fromHash(), false);
+  if (state.profile && !state.profile.uni) UniPicker.open(true); // أول مرة: من أي جامعة؟
 }
 
 $('#logoutBtn').addEventListener('click', () => {
+  if (!CONFIG.DEMO_MODE) fetch('/api/session', { method: 'DELETE' }).catch(() => { });
   Auth.logout();
   state.email = null;
   state.admin = false;
   Tasks.list = [];
-  adminFetchedAt = 0;
+  Admin.data = null;
+  Library.reset();
+  state.profile = null;
   Mist.list = [];
   Planner.reset(false);
   $('#stepCode').hidden = true;
@@ -346,6 +375,7 @@ $('#taskForm').addEventListener('submit', e => {
   $('#fNote').value = '';
   $('#fGrade').value = '';
   toast(`${TYPES[state.type].icon} تمت إضافة ${TYPES[state.type].label} <b>${esc(subject)}</b>`, 'ok');
+  AddSheet.close();
   render();
   checkReminders();
 });
@@ -414,7 +444,7 @@ function render() {
   list.sort((a, b) => a.due - b.due);
 
   if (!list.length) {
-    $('#list').innerHTML = `<div class="empty"><span>${state.filter === 'done' ? '🏆' : '🌙'}</span>${state.filter === 'done' ? 'ما خلّصت شي للحين' : 'ما عندك شي هنا — ضيف أول تذكير من النموذج'}</div>`;
+    $('#list').innerHTML = `<div class="empty"><span>${state.filter === 'done' ? '🏆' : '🌙'}</span>${state.filter === 'done' ? 'ما خلّصت شي للحين' : 'ما عندك شي هنا — اضغط ＋ وضيف أول تذكير'}</div>`;
   } else if (state.filter === 'done') {
     $('#list').innerHTML = list.map(itemHTML).join('');
   } else {
@@ -433,7 +463,6 @@ function render() {
   }
 
   renderNextUp();
-  if (state.admin) renderAdmin();
 }
 
 $('#list').addEventListener('click', e => {
@@ -486,54 +515,6 @@ function renderNextUp() {
     </div>`;
 }
 
-/* ---------- لوحة الأدمن ---------- */
-let adminFetchedAt = 0;
-async function renderAdmin(force = false) {
-  if (!force && Date.now() - adminFetchedAt < 60000) return; // نحدّثها كل دقيقة بس
-  adminFetchedAt = Date.now();
-  let rows;
-  try {
-    if (CONFIG.DEMO_MODE) {
-      const users = Store.get('thk_users', {});
-      rows = Object.entries(users).map(([email, u]) => {
-        const tasks = Store.get('thk_tasks_' + email, []);
-        return { email, ...u, total: tasks.length, open: tasks.filter(t => !t.done).length, admin: email === CONFIG.ADMIN_EMAIL };
-      }).sort((a, b) => b.last - a.last);
-    } else {
-      rows = (await api('admin')).users;
-    }
-  } catch (e) {
-    $('#adminContent').innerHTML = `<p class="note">ما قدرنا نجيب بيانات المستخدمين: ${esc(e.message)}</p>`;
-    return;
-  }
-  const totalTasks = rows.reduce((s, r) => s + r.total, 0);
-
-  $('#adminContent').innerHTML = `
-    <div class="a-stats">
-      <div><b>${rows.length}</b>مستخدم</div>
-      <div><b>${totalTasks}</b>تذكير</div>
-      <button class="btn ghost sm" id="adminRefresh">🔄 تحديث</button>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>الإيميل</th><th>أول دخول</th><th>آخر دخول</th><th>التذكيرات</th><th>المفتوحة</th></tr></thead>
-        <tbody>${rows.map(r => `
-          <tr>
-            <td dir="ltr">${esc(r.email)} ${r.admin ? '👑' : ''}</td>
-            <td>${fmtShort(r.joined)}</td>
-            <td>${fmtShort(r.last)}</td>
-            <td>${r.total}</td>
-            <td>${r.open}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
-    ${CONFIG.DEMO_MODE ? '<p class="note">ℹ️ وضع تجريبي: تظهر الحسابات اللي دخلت من نفس المتصفح بس.</p>' : ''}`;
-}
-$('#adminContent').addEventListener('click', e => {
-  if (e.target.id === 'adminRefresh') renderAdmin(true);
-});
-
 /* =========================================================
    التذكيرات والإشعارات
    ========================================================= */
@@ -542,7 +523,11 @@ function updateNotifBtn() {
   const on = 'Notification' in window && Notification.permission === 'granted';
   b.classList.toggle('on', on);
   b.title = on ? 'الإشعارات مفعّلة' : 'تفعيل الإشعارات';
+  const b2 = $('#notifBtn2');
+  b2.textContent = on ? '✅ مفعّلة' : 'تفعيل';
+  b2.disabled = on;
 }
+$('#notifBtn2').addEventListener('click', () => $('#notifBtn').click());
 $('#notifBtn').addEventListener('click', async () => {
   if (!('Notification' in window)) return toast('متصفحك ما يدعم الإشعارات', 'err');
   const p = await Notification.requestPermission();
@@ -858,7 +843,7 @@ async function generateQuiz(mode) {
       while (next < chunks.length && !fatal) {
         const i = next++;
         try {
-          results[i] = await askQuiz(chunks[i], mode);
+          results[i] = await askQuiz({ ...chunks[i], first: i === 0 }, mode);
         } catch (e) {
           failed++;
           lastErr = e;
@@ -882,8 +867,7 @@ async function generateQuiz(mode) {
     quiz.questions = prepare(all);
     quiz.graded = false;
     setProgress(100, 'جاهز!');
-    renderQuiz();
-    $('#quizRun').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showQuiz();
     toast(`🧠 جهزنا ${quiz.questions.length} سؤال`, 'ok');
   } catch (e) {
     toast(esc(e.message), 'err', 6000);
@@ -898,8 +882,17 @@ $('#qGo').addEventListener('click', () => {
   generateQuiz($('input[name=qMode]:checked').value);
 });
 
+// يفتح الكويز في تبويب المذاكرة
+function showQuiz() {
+  View.go('study');
+  Study.sub('quiz');
+  renderQuiz();
+  requestAnimationFrame(() => $('#quizRun').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
+
 function renderQuiz(scoreText = '') {
   const box = $('#quizRun');
+  quiz.closed = false;
   box.hidden = false;
   const g = quiz.graded;
 
@@ -965,7 +958,7 @@ $('#quizRun').addEventListener('click', async e => {
   if (!b) return;
   const act = b.dataset.qa;
 
-  if (act === 'close') { $('#quizRun').hidden = true; return; }
+  if (act === 'close') { quiz.closed = true; $('#quizRun').hidden = true; return; }
   if (act === 'again') {
     quiz.questions = prepare(quiz.questions.map(({ user, score, feedback, ...q }) => q));
     quiz.graded = false;
@@ -1027,7 +1020,7 @@ $('#quizRun').addEventListener('click', async e => {
     let lbNote = '';
     if (quiz.lib && !CONFIG.DEMO_MODE) {
       try {
-        const r = await api('library', { method: 'POST', body: { action: 'score', code: quiz.lib.code, id: quiz.lib.id, score: pct } });
+        const r = await api('library', { method: 'POST', body: { action: 'score', code: quiz.lib.code, id: quiz.lib.id, score: pct, uni: quiz.lib.uni } });
         lbNote = `<div class="lb"><b>🏆 لوحة الترتيب</b>${r.top.map((t, i) => `<div class="${t.me ? 'me' : ''}">${['🥇', '🥈', '🥉'][i] || (i + 1) + '.'} ${esc(t.name)}${t.me ? ' (أنت)' : ''} — ${t.score}%</div>`).join('')}${r.rank > 5 ? `<div class="me">ترتيبك: ${r.rank}</div>` : ''}</div>`;
       } catch { }
     }
@@ -1103,8 +1096,7 @@ function openBank() {
   // الأسئلة اللي غلط فيها أكثر تطلع أول
   const sorted = [...Mist.list].sort((a, b) => (b.misses || 1) - (a.misses || 1)).slice(0, 40);
   quiz.questions = prepare(sorted.map(({ id, misses, at, ...q }) => ({ ...q, bankId: id })));
-  renderQuiz();
-  $('#quizRun').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showQuiz();
 }
 $('#mistBtn').addEventListener('click', openBank);
 
@@ -1156,7 +1148,11 @@ const Planner = {
     p.days.forEach(d => d.items.forEach(it => { total++; if (it.done) done++; }));
     view.innerHTML = `
       <div class="plan-title">📋 ${esc(p.title || 'خطتك')}</div>
-      <div class="plan-progress">خلصت ${done} من ${total} مهمة ${total ? `(${Math.round(done / total * 100)}%)` : ''}</div>
+      <div class="plan-bar">
+        <div class="plan-progress">خلصت ${done} من ${total} مهمة ${total ? `(${Math.round(done / total * 100)}%)` : ''}</div>
+        <button class="btn ghost sm" id="planDelete" type="button">🗑️ احذف الخطة</button>
+      </div>
+      ${total && done === total ? `<div class="plan-done">🎉 كفو! خلصت الخطة كاملة. تقدر تحذفها وتبدأ خطة جديدة لاختبارك الجاي.</div>` : ''}
       <div class="plan-days">
         ${p.days.map((d, di) => {
           const dt = new Date(d.date + 'T12:00:00');
@@ -1263,6 +1259,13 @@ $('#planMsg').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); Planner.send(); }
 });
 $('#planReset').addEventListener('click', () => Planner.reset());
+$('#planView').addEventListener('click', e => {
+  if (e.target.id !== 'planDelete') return;
+  if (!confirm('تبي تحذف الخطة والمحادثة؟ ما تقدر ترجعها.')) return;
+  Planner.reset(false);
+  Planner.save();
+  toast('انحذفت الخطة 🗑️ — جاهز لخطة جديدة', 'ok');
+});
 $('#planView').addEventListener('change', e => {
   const c = e.target.closest('input[type=checkbox][data-d]');
   if (!c) return;
@@ -1304,141 +1307,353 @@ $('#planFile').addEventListener('change', async e => {
 
 
 /* =========================================================
-   📚 مكتبة المواد
+   📚 مكتبة المواد (كل جامعة لها مكتبة)
    ========================================================= */
+const SECS = {
+  quiz:   { icon: '📝', label: 'كويزات وتست بانك' },
+  sum:    { icon: '📄', label: 'ملخصات' },
+  slides: { icon: '🖼️', label: 'سلايدات' },
+  links:  { icon: '🔗', label: 'شروحات وروابط' }
+};
+const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' ميقا' : Math.max(1, Math.round(b / 1024)) + ' كيلو';
+
 const Library = {
   courses: [],
-  current: null, // { course, quizzes }
-  async load() {
-    if (CONFIG.DEMO_MODE) { this.render(); return; }
-    try { this.courses = (await api('library?action=courses')).courses || []; } catch { }
+  uni: null,        // الجامعة المعروضة (الأدمن يقدر يتصفح غير جامعته)
+  uniName: '',
+  current: null,    // { course, quizzes, res }
+  sec: 'quiz',
+  loaded: false,
+  reset() { this.courses = []; this.current = null; this.uni = null; this.loaded = false; this.sec = 'quiz'; },
+  async load(uni) {
+    if (CONFIG.DEMO_MODE) { this.loaded = true; this.render(); return; }
+    if (this.busy && !uni) return;
+    this.busy = true;
+    try {
+      const r = await api('library?action=courses' + (uni ? '&uni=' + uni : ''));
+      this.courses = r.courses || [];
+      this.uni = r.uni;
+      this.uniName = r.uniName;
+    } catch (e) {
+      this.error = e.message;
+    }
+    this.busy = false;
+    this.loaded = true;
     this.render();
   },
+  q(extra = '') { return `library?${this.uni && state.admin ? 'uni=' + this.uni + '&' : ''}${extra}`; },
+  body(b) { return state.admin && this.uni ? { ...b, uni: this.uni } : b; },
+
   render() {
     const box = $('#libBody');
     if (this.current) return this.renderCourse();
+    if (CONFIG.DEMO_MODE) { box.innerHTML = '<div class="empty"><span>📚</span>المكتبة تشتغل بس على الموقع المنشور</div>'; return; }
+    if (!state.profile?.uni) {
+      box.innerHTML = `<div class="empty"><span>🎓</span>اختر جامعتك عشان تشوف مكتبتها<br><br><button class="btn primary" data-lib="uni" type="button">اختر الجامعة</button></div>`;
+      return;
+    }
+    if (!this.loaded) { box.innerHTML = '<div class="empty"><span>⏳</span>نحمّل المكتبة...</div>'; return; }
     const q = ($('#libSearch')?.value || '').trim().toLowerCase();
-    const list = this.courses.filter(c => !q || c.code.toLowerCase().includes(q.replace(/\s/g, '')) || c.name.toLowerCase().includes(q));
+    const qq = q.replace(/\s/g, '');
+    const list = this.courses.filter(c => !q || c.code.toLowerCase().includes(qq) || c.name.toLowerCase().includes(q));
+    const other = state.admin && this.uni !== state.profile.uni;
     box.innerHTML = `
+      <div class="lib-top">
+        <div>
+          <h3>📚 مكتبة ${esc(this.uniName || '')}</h3>
+          <p class="muted small">ملخصات وسلايدات وكويزات وروابط شروحات، يضيفها طلاب جامعتك لكل مادة.</p>
+        </div>
+        <button class="btn primary sm" data-lib="newCourse" type="button">＋ مادة جديدة</button>
+      </div>
+      ${state.admin ? `<label class="admin-uni">👑 تصفح مكتبة جامعة:
+        <select id="libUni">${UNIS.map(([id, n]) => `<option value="${id}" ${id === this.uni ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>` : ''}
+      ${other ? '<p class="warn small">انت تتصفح مكتبة جامعة غير جامعتك (أدمن)</p>' : ''}
       <input id="libSearch" placeholder="🔎 دوّر على مادة: IE200، فيزياء..." value="${esc(q)}">
       <div class="lib-courses">
-        ${list.length ? list.map(c => `
-          <button class="lib-course" data-code="${esc(c.code)}" type="button">
+        ${list.length ? list.map(c => {
+          const n = c.n || { quiz: c.count || 0 };
+          return `<button class="lib-course" data-code="${esc(c.code)}" type="button">
             <b dir="ltr">${esc(c.code)}</b>
             <span>${esc(c.name)}</span>
-            <small>${c.count} كويز</small>
-          </button>`).join('')
-        : `<div class="empty"><span>📚</span>${this.courses.length ? 'ما لقينا مادة بهالاسم' : 'المكتبة فاضية للحين. حل كويز وشاركه، وكن أول واحد 🚀'}</div>`}
+            <small>${Object.entries(SECS).map(([k, s]) => `${s.icon} ${n[k] || 0}`).join(' · ')}</small>
+          </button>`;
+        }).join('')
+        : `<div class="empty"><span>📚</span>${this.error ? esc(this.error) : this.courses.length ? 'ما لقينا مادة بهالاسم. تقدر تضيفها 👆' : 'المكتبة فاضية للحين. أضف أول مادة وكن أول واحد 🚀'}</div>`}
       </div>`;
     const inp = $('#libSearch');
     inp.addEventListener('input', () => { const pos = inp.selectionStart; this.render(); const n = $('#libSearch'); n.focus(); n.setSelectionRange(pos, pos); });
+    $('#libUni')?.addEventListener('change', e => { this.loaded = false; this.render(); this.load(e.target.value); });
   },
-  async openCourse(code) {
+
+  async openCourse(code, sec) {
     try {
-      this.current = await api('library?action=course&code=' + encodeURIComponent(code));
+      this.current = await api(this.q('action=course&code=' + encodeURIComponent(code)));
+      if (sec) this.sec = sec;
       this.renderCourse();
     } catch (e) { toast(esc(e.message), 'err'); }
   },
+  // الأدمن: يفتح مادة من جامعة ثانية (من قائمة البلاغات)
+  async openAt(uni, code) {
+    View.go('lib');
+    if (uni !== this.uni) await this.load(uni);
+    await this.openCourse(code);
+  },
+
+  resHTML(r) {
+    const icon = r.kind === 'link' ? '🔗' : r.kind === 'image' ? '🖼️' : r.mime === 'application/pdf' ? '📕' : '📄';
+    const canQuiz = this.sec === 'quiz' && r.kind !== 'link' && (r.kind === 'image' || r.mime === 'application/pdf');
+    let host = '';
+    if (r.kind === 'link') { try { host = new URL(r.url).hostname.replace(/^www\./, ''); } catch { } }
+    return `<div class="lib-item ${r.hidden ? 'hid' : ''}">
+      <div class="li-ico">${icon}</div>
+      <div class="li-main">
+        <b>${esc(r.title)}</b>
+        <div class="muted small">${r.kind === 'link' ? `<span dir="ltr">${esc(host)}</span>` : esc(r.fname) + ' · ' + fmtSize(r.size)} · ${esc(r.by)} · ${fmtShort(r.at)}${r.hidden ? ' · 🚫 مخفي بسبب بلاغات' : ''}</div>
+      </div>
+      <div class="acts">
+        <a class="btn primary sm" href="${esc(r.url)}" target="_blank" rel="noopener">${r.kind === 'link' ? 'افتح ↗' : 'افتح'}</a>
+        ${canQuiz ? `<button class="btn ghost sm" data-lib="toQuiz" data-id="${r.id}" type="button" title="حوّل الملف لكويز تفاعلي">🧠 كويز</button>` : ''}
+        ${r.mine || state.admin ? `<button class="btn ghost sm" data-lib="del" data-kind="res" data-id="${r.id}" type="button">🗑️</button>` : `<button class="btn ghost sm" data-lib="report" data-kind="res" data-id="${r.id}" type="button" title="بلّغ عن محتوى غلط أو غير مناسب">🚩</button>`}
+        ${r.hidden && state.admin ? `<button class="btn ghost sm" data-lib="restore" data-kind="res" data-id="${r.id}" type="button">♻️</button>` : ''}
+      </div>
+    </div>`;
+  },
+  quizHTML(q) {
+    return `<div class="lib-item ${q.hidden ? 'hid' : ''}">
+      <div class="li-ico">🧠</div>
+      <div class="li-main">
+        <b>${esc(q.title)}</b>
+        <div class="muted small">كويز تفاعلي · ${q.n} سؤال · ${esc(q.by)} · ${fmtShort(q.at)} · انحل ${q.plays} مرة
+          ${q.top[0] ? ` · 🏆 أعلى درجة ${q.top[0].score}%` : ''}${q.hidden ? ' · 🚫 مخفي بسبب بلاغات' : ''}</div>
+      </div>
+      <div class="acts">
+        <button class="btn primary sm" data-lib="play" data-id="${q.id}" type="button">▶️ حل</button>
+        ${q.mine || state.admin ? `<button class="btn ghost sm" data-lib="del" data-kind="quiz" data-id="${q.id}" type="button">🗑️</button>` : `<button class="btn ghost sm" data-lib="report" data-kind="quiz" data-id="${q.id}" type="button" title="بلّغ عن كويز فيه غلط">🚩</button>`}
+        ${q.hidden && state.admin ? `<button class="btn ghost sm" data-lib="restore" data-kind="quiz" data-id="${q.id}" type="button">♻️</button>` : ''}
+      </div>
+    </div>`;
+  },
   renderCourse() {
-    const { course, quizzes } = this.current;
+    const { course, quizzes, res } = this.current;
+    const counts = {};
+    Object.keys(SECS).forEach(k => counts[k] = res.filter(r => r.sec === k).length + (k === 'quiz' ? quizzes.length : 0));
+    const items = res.filter(r => r.sec === this.sec);
+    const list = (this.sec === 'quiz' ? quizzes.map(q => this.quizHTML(q)) : []).concat(items.map(r => this.resHTML(r)));
     $('#libBody').innerHTML = `
       <button class="btn ghost sm" data-lib="back" type="button">→ رجوع للمواد</button>
       <div class="lib-head">
-        <h4><span dir="ltr">${esc(course?.code || '')}</span> — ${esc(course?.name || '')}</h4>
-        ${course?.info ? `<p class="muted small">${esc(course.info)}</p>` : ''}
+        <h3><span dir="ltr">${esc(course.code)}</span> — ${esc(course.name)}</h3>
+        ${course.info ? `<p class="muted small">${esc(course.info)}</p>` : ''}
       </div>
-      ${quizzes.length ? quizzes.map(q => `
-        <div class="lib-quiz ${q.hidden ? 'hid' : ''}">
-          <div>
-            <b>${esc(q.title)}</b>
-            <div class="muted small">${q.n} سؤال · شاركه ${esc(q.by)} · ${fmtShort(q.at)} · انحل ${q.plays} مرة
-              ${q.top[0] ? ` · 🏆 أعلى درجة ${q.top[0].score}%` : ''}${q.hidden ? ' · 🚫 مخفي بسبب بلاغات' : ''}</div>
-          </div>
-          <div class="acts">
-            <button class="btn primary sm" data-lib="play" data-id="${q.id}" type="button">▶️ حل</button>
-            ${q.mine || state.admin ? `<button class="btn ghost sm" data-lib="del" data-id="${q.id}" type="button">🗑️</button>` : `<button class="btn ghost sm" data-lib="report" data-id="${q.id}" type="button" title="بلّغ عن كويز فيه غلط أو محتوى غير مناسب">🚩</button>`}
-            ${q.hidden && state.admin ? `<button class="btn ghost sm" data-lib="restore" data-id="${q.id}" type="button">♻️</button>` : ''}
-          </div>
-        </div>`).join('') : '<div class="empty"><span>📭</span>ما فيه كويزات في هالمادة للحين</div>'}`;
+      <div class="sec-tabs">
+        ${Object.entries(SECS).map(([k, s]) => `<button type="button" data-sec="${k}" class="${this.sec === k ? 'sel' : ''}">${s.icon} ${s.label} <small>${counts[k]}</small></button>`).join('')}
+      </div>
+      <button class="btn primary full" data-lib="add" type="button">＋ أضف ${SECS[this.sec].label}</button>
+      ${this.sec === 'quiz' ? '<p class="muted small center" style="margin:8px 0 0">💡 تبي كويز تفاعلي؟ ارفع بنك الأسئلة في <b>صانع الكويز</b>، وبعد ما تحله اضغط "شاركه في المكتبة"</p>' : ''}
+      <div class="lib-list">
+        ${list.length ? list.join('') : `<div class="empty"><span>📭</span>ما فيه ${SECS[this.sec].label} لهالمادة للحين. كن أول واحد يضيف 🙌</div>`}
+      </div>`;
   },
+
   async play(id) {
     const code = this.current.course.code;
     try {
-      const r = await api(`library?action=quiz&code=${encodeURIComponent(code)}&id=${encodeURIComponent(id)}`);
+      const r = await api(this.q(`action=quiz&code=${encodeURIComponent(code)}&id=${encodeURIComponent(id)}`));
       if (!r.questions.length) return toast('الكويز فاضي', 'err');
       quiz.isBank = false;
-      quiz.lib = { code, id, title: r.quiz.title };
+      quiz.lib = { code, id, title: r.quiz.title, uni: this.uni };
       quiz.graded = false;
       quiz.questions = prepare(r.questions);
-      renderQuiz();
-      $('#quizRun').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      showQuiz();
     } catch (e) { toast(esc(e.message), 'err'); }
   },
-  async action(act, id) {
+  async action(act, id, kind) {
     const code = this.current.course.code;
-    if (act === 'report' && !confirm('تبلّغ عن هالكويز؟ (فيه أسئلة غلط أو محتوى غير مناسب)')) return;
-    if (act === 'del' && !confirm('تبي تحذف هالكويز من المكتبة؟')) return;
+    if (act === 'report' && !confirm('تبلّغ عن هذا؟ (فيه غلط أو محتوى غير مناسب)')) return;
+    if (act === 'del' && !confirm('تبي تحذفه من المكتبة؟')) return;
     try {
-      await api('library', { method: 'POST', body: { action: act === 'del' ? 'delete' : act, code, id } });
+      await api('library', { method: 'POST', body: this.body({ action: act === 'del' ? 'delete' : act, code, id, kind }) });
       toast(act === 'report' ? 'شكراً، وصلنا بلاغك 🙏' : act === 'del' ? 'انحذف 🗑️' : 'رجع ظاهر ♻️', 'ok');
       await this.openCourse(code);
-      this.load();
+      this.load(this.uni);
     } catch (e) { toast(esc(e.message), 'err'); }
+  },
+
+  // ملف من المكتبة → صانع الكويز
+  async toQuiz(id) {
+    const r = this.current.res.find(x => x.id === id);
+    if (!r) return;
+    toast('نجهز الملف... ⏳', 'info', 2500);
+    try {
+      const res = await fetch(r.url);
+      if (!res.ok) throw new Error('ما قدرنا نفتح الملف');
+      const blob = await res.blob();
+      const file = new File([blob], r.fname || (r.title + (r.kind === 'image' ? '.jpg' : '.pdf')), { type: r.mime || blob.type });
+      quiz.files = [file];
+      quiz.jobs = null;
+      $('#qFileName').textContent = file.name;
+      $('#dropZone').classList.add('has');
+      View.go('study');
+      Study.sub('quiz');
+      $('#quizMaker').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast('📄 جاهز! اختر النوع واضغط "ولّد الكويز" ✨', 'ok', 5000);
+    } catch (e) { toast(esc(e.message), 'err'); }
+  },
+
+  // نافذة: مادة جديدة
+  newCourseForm() {
+    sheetForm(`
+      <b>📚 مادة جديدة في مكتبة ${esc(this.uniName)}</b>
+      <label>رمز المادة<input name="code" dir="ltr" placeholder="IE200" required></label>
+      <label>اسم المادة<input name="name" placeholder="مهارات الاتصال التقنية" required></label>
+      <label>نبذة <small class="muted">(اختياري)</small><input name="info" placeholder="مثلاً: الدكتور، الفصول، نصايح"></label>
+      <button class="btn primary full" type="submit">أضف المادة</button>`,
+      async form => {
+        const r = await api('library', { method: 'POST', body: this.body({ action: 'course', code: form.code.value, name: form.name.value, info: form.info.value }) });
+        toast(r.created ? `🎉 انضافت ${esc(r.course.code)}` : 'المادة موجودة من قبل 👇', 'ok');
+        await this.load(this.uni);
+        await this.openCourse(r.course.code, 'sum');
+      });
+  },
+
+  // نافذة: إضافة رابط / ملف / صورة
+  addForm() {
+    const sec = this.sec, code = this.current.course.code;
+    const hint = { quiz: 'مثلاً: تست بانك الميد', sum: 'مثلاً: ملخص الفصل 3', slides: 'مثلاً: سلايدات الأسبوع 5', links: 'مثلاً: قناة شروحات على تليجرام' }[sec];
+    const el = sheetForm(`
+      <b>${SECS[sec].icon} أضف في ${SECS[sec].label} — <span dir="ltr">${esc(code)}</span></b>
+      <div class="kind-pick">
+        <label><input type="radio" name="kind" value="link" ${sec === 'links' ? 'checked' : ''}><span>🔗 رابط</span></label>
+        <label><input type="radio" name="kind" value="file" ${sec !== 'links' ? 'checked' : ''}><span>📄 ملف</span></label>
+        <label><input type="radio" name="kind" value="image"><span>🖼️ صورة</span></label>
+      </div>
+      <label>العنوان<input name="title" placeholder="${hint}" required></label>
+      <label data-k="link">الرابط<input name="url" dir="ltr" placeholder="https://t.me/... أو رابط درايف أو يوتيوب"></label>
+      <label data-k="file">الملف <small class="muted">(PDF · Word · PowerPoint — حتى 4 ميقا)</small>
+        <input name="file" type="file" accept=".pdf,.docx,.pptx"></label>
+      <label data-k="image">الصورة <small class="muted">(تنضغط تلقائياً)</small>
+        <input name="image" type="file" accept="image/*"></label>
+      <p class="muted small">🔒 اسمك يطلع مختصر. لا ترفع شي فيه بيانات شخصية. الملف الكبير؟ ارفعه على قوقل درايف وحط الرابط.</p>
+      <button class="btn primary full" type="submit">أضف 🚀</button>`,
+      async form => {
+        const kind = form.kind.value;
+        const title = form.title.value.trim();
+        if (!title) throw new Error('اكتب عنوان');
+        if (kind === 'link') {
+          await api('library', { method: 'POST', body: this.body({ action: 'link', code, sec, title, url: form.url.value }) });
+        } else {
+          const f = (kind === 'image' ? form.image : form.file).files[0];
+          if (!f) throw new Error(kind === 'image' ? 'اختر صورة' : 'اختر ملف');
+          let blob = f, mime = f.type, name = f.name;
+          if (kind === 'image') {
+            const b64 = await toJpeg(f);
+            blob = await (await fetch('data:image/jpeg;base64,' + b64)).blob();
+            mime = 'image/jpeg';
+            name = name.replace(/\.[^.]+$/, '') + '.jpg';
+          } else {
+            const ext = name.toLowerCase().split('.').pop();
+            mime = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }[ext];
+            if (!mime) throw new Error('نوع الملف غير مدعوم (PDF، Word، PowerPoint)');
+            if (f.size > 4 * 1048576) throw new Error('الملف أكبر من 4 ميقا. ارفعه على قوقل درايف وحط الرابط 🔗');
+          }
+          await upload(blob, mime, { code, sec, title, name, ...(state.admin && this.uni ? { uni: this.uni } : {}) });
+        }
+        toast('🎉 انضاف! شكراً إنك تفيد زملاءك', 'ok');
+        await this.openCourse(code);
+        this.load(this.uni);
+      });
+    const form = el.querySelector('form');
+    const sync = () => $$('[data-k]', form).forEach(l => l.hidden = l.dataset.k !== form.kind.value);
+    form.addEventListener('change', e => { if (e.target.name === 'kind') sync(); });
+    sync();
   },
 
   // نافذة مشاركة الكويز
   shareForm() {
     if (CONFIG.DEMO_MODE) return toast('المكتبة تشتغل بس على الموقع المنشور', 'err');
-    const el = document.createElement('div');
-    el.className = 'sheet';
-    el.innerHTML = `
-      <form class="sheet-box glass" novalidate>
-        <b>📚 شارك الكويز في المكتبة</b>
-        <small class="muted">زملاؤك في المادة بيقدرون يحلونه. اسمك يطلع مختصر.</small>
-        <label>رمز المادة<input name="code" dir="ltr" list="libCodes" placeholder="IE200" required></label>
-        <datalist id="libCodes">${this.courses.map(c => `<option value="${esc(c.code)}">${esc(c.name)}</option>`).join('')}</datalist>
-        <label>اسم المادة<input name="name" placeholder="مهارات الاتصال التقنية"></label>
-        <label>نبذة عن المادة <small class="muted">(اختياري)</small><input name="info" placeholder="مثلاً: الدكتور، الفصول، نصايح"></label>
-        <label>عنوان الكويز<input name="title" value="${esc(quiz.title || '')}" placeholder="مثلاً: أسئلة الفصل 3"></label>
-        <button class="btn primary full" type="submit">شارك 🚀</button>
-        <button class="btn ghost full" type="button" data-x>إلغاء</button>
-      </form>`;
-    const form = el.querySelector('form');
-    form.code.addEventListener('input', () => {
-      const c = this.courses.find(x => x.code === form.code.value.toUpperCase().replace(/[\s_\-]/g, ''));
-      if (c) { form.name.value = c.name; form.info.placeholder = c.info || form.info.placeholder; }
-    });
-    el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-x]')) el.remove(); });
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-      const btn = form.querySelector('[type=submit]');
-      btn.disabled = true;
-      try {
+    if (!state.profile?.uni) return UniPicker.open();
+    sheetForm(`
+      <b>📚 شارك الكويز في مكتبة ${esc(UNI_NAME[state.profile.uni] || '')}</b>
+      <small class="muted">زملاؤك في المادة بيقدرون يحلونه. اسمك يطلع مختصر.</small>
+      <label>رمز المادة<input name="code" dir="ltr" list="libCodes" placeholder="IE200" required></label>
+      <datalist id="libCodes">${(this.uni === state.profile.uni ? this.courses : []).map(c => `<option value="${esc(c.code)}">${esc(c.name)}</option>`).join('')}</datalist>
+      <label>اسم المادة<input name="name" placeholder="مهارات الاتصال التقنية"></label>
+      <label>عنوان الكويز<input name="title" value="${esc(quiz.title || '')}" placeholder="مثلاً: أسئلة الفصل 3"></label>
+      <button class="btn primary full" type="submit">شارك 🚀</button>`,
+      async form => {
         const questions = quiz.questions.map(({ user, score, feedback, bankId, ...q }) => q);
         const r = await api('library', { method: 'POST', body: {
-          action: 'share', code: form.code.value, name: form.name.value, info: form.info.value, title: form.title.value, questions
+          action: 'share', code: form.code.value, name: form.name.value, title: form.title.value, questions
         } });
-        el.remove();
-        toast(`🎉 انضاف الكويز لمكتبة ${esc(r.code)}! أرسل الرابط لزملاؤك`, 'ok', 6000);
+        toast(`🎉 انضاف الكويز لمكتبة ${esc(r.code)}!`, 'ok', 6000);
+        this.uni = null;
         await this.load();
-      } catch (err) {
-        toast(esc(err.message), 'err', 6000);
-        btn.disabled = false;
-      }
-    });
-    document.body.appendChild(el);
-    form.code.focus();
+      },
+      form => form.code.addEventListener('input', () => {
+        const c = this.courses.find(x => x.code === form.code.value.toUpperCase().replace(/[\s_\-]/g, ''));
+        if (c) form.name.value = c.name;
+      }));
   }
 };
 
+// نافذة فيها نموذج: onSubmit ترمي خطأ لو فيه مشكلة
+function sheetForm(inner, onSubmit, setup) {
+  const el = document.createElement('div');
+  el.className = 'sheet';
+  el.innerHTML = `<form class="sheet-box glass" novalidate>${inner}<button class="btn ghost full" type="button" data-x>إلغاء</button></form>`;
+  const form = el.querySelector('form');
+  el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-x]')) el.remove(); });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = form.querySelector('[type=submit]');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'لحظة... ⏳';
+    try {
+      await onSubmit(form);
+      el.remove();
+    } catch (err) {
+      toast(esc(err.message), 'err', 6000);
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+  document.body.appendChild(el);
+  setup?.(form);
+  form.querySelector('input:not([type=radio]):not([type=file])')?.focus();
+  return el;
+}
+
+// رفع ملف (الجسم = الملف نفسه)
+async function upload(blob, mime, params) {
+  const s = Auth.current();
+  const res = await fetch('/api/upload?' + new URLSearchParams(params), {
+    method: 'POST',
+    headers: { 'content-type': mime, authorization: 'Bearer ' + (s?.token || '') },
+    body: blob
+  });
+  let d = {};
+  try { d = await res.json(); } catch { }
+  if (res.status === 413 && !d.error) d.error = 'الملف كبير، ارفعه على قوقل درايف وحط الرابط 🔗';
+  if (!res.ok) throw new Error(d.error || 'ما قدرنا نرفع الملف');
+  return d;
+}
+
 $('#libBody').addEventListener('click', e => {
   const c = e.target.closest('.lib-course');
-  if (c) return Library.openCourse(c.dataset.code);
+  if (c) return Library.openCourse(c.dataset.code, 'quiz');
+  const t = e.target.closest('[data-sec]');
+  if (t) { Library.sec = t.dataset.sec; Library.renderCourse(); return; }
   const b = e.target.closest('[data-lib]');
   if (!b) return;
-  if (b.dataset.lib === 'back') { Library.current = null; Library.render(); return; }
-  if (b.dataset.lib === 'play') return Library.play(b.dataset.id);
-  Library.action(b.dataset.lib, b.dataset.id);
+  const act = b.dataset.lib;
+  if (act === 'back') { Library.current = null; Library.render(); return; }
+  if (act === 'uni') return UniPicker.open();
+  if (act === 'newCourse') return Library.newCourseForm();
+  if (act === 'add') return Library.addForm();
+  if (act === 'play') return Library.play(b.dataset.id);
+  if (act === 'toQuiz') return Library.toQuiz(b.dataset.id);
+  Library.action(act, b.dataset.id, b.dataset.kind);
 });
 
 /* =========================================================
@@ -1588,9 +1803,451 @@ document.addEventListener('click', e => {
   if (b) { e.preventDefault(); Voice.start(b); }
 });
 
+/* =========================================================
+   🧭 التبويبات
+   ========================================================= */
+const VIEWS = ['home', 'study', 'lib', 'me', 'admin'];
+const View = {
+  fromHash() { const h = location.hash.slice(1); return VIEWS.includes(h) ? h : 'home'; },
+  go(v, push = true) {
+    if (v === 'admin' && !state.admin) v = 'home';
+    const changed = state.view !== v;
+    state.view = v;
+    VIEWS.forEach(x => { $('#v-' + x).hidden = x !== v; });
+    $$('#tabbar button').forEach(b => b.classList.toggle('sel', b.dataset.v === v));
+    $('#fab').hidden = v !== 'home';
+    if (push && location.hash.slice(1) !== v) history.replaceState(null, '', '#' + v);
+    if (changed) window.scrollTo({ top: 0 });
+    if (v === 'admin') Admin.load();
+    if (v === 'lib' && !Library.loaded && !Library.busy && state.profile?.uni) Library.load();
+    if (v === 'me') Profile.render();
+  }
+};
+$('#tabbar').addEventListener('click', e => {
+  const b = e.target.closest('button[data-v]');
+  if (b) View.go(b.dataset.v);
+});
+window.addEventListener('hashchange', () => { if (state.email) View.go(View.fromHash(), false); });
+$('#adminBadge').addEventListener('click', () => View.go('admin'));
+
+// المذاكرة: صانع الكويز أو خطة المذاكرة
+const Study = {
+  cur: 'quiz',
+  sub(s) {
+    this.cur = s;
+    $$('#studySeg button').forEach(b => b.classList.toggle('sel', b.dataset.s === s));
+    $('#quizMaker').hidden = s !== 'quiz';
+    $('#quizRun').hidden = s !== 'quiz' || !quiz.questions.length || quiz.closed;
+    $('#planner').hidden = s !== 'plan';
+  }
+};
+$('#studySeg').addEventListener('click', e => {
+  const b = e.target.closest('button[data-s]');
+  if (b) Study.sub(b.dataset.s);
+});
+
+// نافذة إضافة تذكير
+const AddSheet = {
+  open() {
+    $('#addSheet').hidden = false;
+    document.body.classList.add('noscroll');
+    setTimeout(() => $('#fSubject').focus(), 50);
+  },
+  close() {
+    $('#addSheet').hidden = true;
+    document.body.classList.remove('noscroll');
+  }
+};
+$('#fab').addEventListener('click', () => AddSheet.open());
+$('#addSheet').addEventListener('click', e => {
+  if (e.target.id === 'addSheet' || e.target.closest('[data-x]')) AddSheet.close();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#addSheet').hidden) AddSheet.close(); });
+
+/* =========================================================
+   🎓 الجامعة
+   ========================================================= */
+const UniPicker = {
+  open(force = false) {
+    const el = document.createElement('div');
+    el.className = 'sheet uni-sheet';
+    el.innerHTML = `
+      <div class="sheet-box glass">
+        <b>🎓 من أي جامعة انت؟</b>
+        <small class="muted">عشان نعرض لك مكتبة جامعتك (ملخصات، سلايدات، كويزات زملاءك). تقدر تغيّرها بعدين مرة كل 30 يوم.</small>
+        <input id="uniSearch" placeholder="🔎 دوّر: الملك عبدالعزيز، الملك سعود...">
+        <div class="uni-list" id="uniList"></div>
+        ${force ? '' : '<button class="btn ghost full" type="button" data-x>إلغاء</button>'}
+      </div>`;
+    const list = el.querySelector('#uniList');
+    const draw = () => {
+      const q = el.querySelector('#uniSearch').value.trim();
+      const items = UNIS.filter(([id, n]) => !q || n.includes(q) || id.includes(q.toLowerCase()) || id === 'other');
+      list.innerHTML = items.map(([id, n]) => `<button type="button" data-uni="${id}" class="${state.profile?.uni === id ? 'sel' : ''}">${esc(n)}</button>`).join('');
+    };
+    el.querySelector('#uniSearch').addEventListener('input', draw);
+    el.addEventListener('click', async e => {
+      if (!force && (e.target === el || e.target.closest('[data-x]'))) return el.remove();
+      const b = e.target.closest('[data-uni]');
+      if (!b) return;
+      if (state.profile?.uni && state.profile.uni !== b.dataset.uni &&
+          !confirm(`تغيّر جامعتك لـ "${UNI_NAME[b.dataset.uni]}"؟\nما تقدر تغيّرها مرة ثانية إلا بعد 30 يوم.`)) return;
+      b.disabled = true;
+      try {
+        await Profile.setUni(b.dataset.uni);
+        el.remove();
+        toast(`🎓 ${esc(UNI_NAME[b.dataset.uni])} — هلا فيك!`, 'ok');
+      } catch (err) {
+        toast(esc(err.message), 'err', 6000);
+        b.disabled = false;
+      }
+    });
+    draw();
+    document.body.appendChild(el);
+  }
+};
+$('#uniChange').addEventListener('click', () => {
+  if (state.profile?.uniNext) return toast(`تقدر تغيّر جامعتك بعد ${Math.ceil((state.profile.uniNext - Date.now()) / DAY)} يوم`, 'info');
+  UniPicker.open();
+});
+
+/* =========================================================
+   ⚙️ حسابي + 💬 تذكير الواتساب
+   ========================================================= */
+const LEADS = [[1, 'ساعة'], [3, '3 ساعات'], [6, '6 ساعات'], [12, '12 ساعة'], [24, 'يوم']];
+const Profile = {
+  busy: false,
+  set(p) {
+    state.profile = p;
+    if (CONFIG.DEMO_MODE && state.email) Store.set('thk_profile_' + state.email, p);
+    if (state.email) this.render();
+  },
+  async setUni(uni) {
+    if (CONFIG.DEMO_MODE) this.set({ ...state.profile, uni, uniName: UNI_NAME[uni] });
+    else this.set((await api('profile', { method: 'POST', body: { action: 'uni', uni } })).profile);
+    Library.reset();
+    Library.load();
+  },
+  async call(body, okMsg) {
+    if (this.busy) return;
+    this.busy = true;
+    $$('#waCard button').forEach(b => b.disabled = true);
+    try {
+      this.set((await api('profile', { method: 'POST', body })).profile);
+      if (okMsg) toast(okMsg, 'ok', 5000);
+    } catch (e) {
+      toast(esc(e.message), 'err', 7000);
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  },
+  render() {
+    const p = state.profile || {};
+    $('#meUni').textContent = p.uni ? `🎓 ${UNI_NAME[p.uni] || ''}` : '🎓 ما اخترت جامعتك';
+    $('#uniChange').textContent = p.uni ? '🎓 تغيير الجامعة' : '🎓 اختر جامعتك';
+    const dm = p.digest?.mail !== false;
+    $('#digestMail').textContent = dm ? '✅ شغّال' : '▶️ شغّله';
+    $('#digestMail').classList.toggle('on', dm);
+    this.renderWA();
+  },
+  renderWA() {
+    const w = state.profile?.wa || {};
+    const box = $('#waCard');
+    const head = `<div class="wa-head"><h3>💬 تذكير على الواتساب <small class="muted">(اختياري)</small></h3>
+      ${w.verified ? `<span class="bb-state ${w.on ? 'on' : ''}">${w.on ? '✅ شغّال' : '⏸️ موقف'}</span>` : ''}</div>`;
+    if (!w.ready && !w.verified) {
+      box.innerHTML = head + `<p class="muted">🚧 قريباً: يجيك تذكير على واتسابك قبل كل موعد بالوقت اللي تختاره.</p>`;
+      return;
+    }
+    if (w.verified) {
+      box.innerHTML = head + `
+        <p class="muted small">يوصلك تذكير على <b dir="ltr">${esc(w.phone)}</b> قبل كل مهمة. (بالكثير 5 رسائل باليوم)</p>
+        <div class="set-row">
+          <div><b>التذكيرات</b></div>
+          <button class="btn ${w.on ? 'ghost' : 'primary'} sm" data-wa="toggle" type="button">${w.on ? '⏸️ أوقفها' : '▶️ شغّلها'}</button>
+        </div>
+        <div class="set-row">
+          <div><b>☀️ ملخص الصباح على الواتساب</b><div class="muted small">رسالة الساعة 7 الصبح فيها مذاكرة يومك ومواعيدك القريبة</div></div>
+          <button class="btn ${state.profile?.digest?.wa ? 'ghost' : 'primary'} sm" data-wa="digest" type="button">${state.profile?.digest?.wa ? '✅ شغّال' : '▶️ شغّله'}</button>
+        </div>
+        <label>ذكّرني على الواتساب قبل الموعد بـ
+          <select id="waLead">${LEADS.map(([h, l]) => `<option value="${h}" ${w.lead === h ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        </label>
+        <button class="btn ghost sm" data-wa="remove" type="button">🗑️ احذف رقمي</button>
+        ${!w.ready ? '<p class="warn small">⚠️ الخدمة موقفة مؤقتاً من الموقع، بترجع قريب.</p>' : ''}`;
+      return;
+    }
+    if (w.pending) {
+      box.innerHTML = head + `
+        <p>أرسلنا رمز تحقق على واتساب <b dir="ltr">${esc(w.pending)}</b> 📲</p>
+        <div class="bb-row">
+          <input id="waCode" inputmode="numeric" maxlength="6" dir="ltr" placeholder="123456" autocomplete="one-time-code">
+          <button class="btn primary" data-wa="verify" type="button">تأكيد ✅</button>
+        </div>
+        <p class="muted small">ما وصلك؟ <button class="link" data-wa="again" type="button">غيّر الرقم أو أعد الإرسال</button></p>`;
+      $('#waCode').addEventListener('input', e => { if (e.target.value.replace(/\D/g, '').length === 6) box.querySelector('[data-wa=verify]').click(); });
+      return;
+    }
+    box.innerHTML = head + `
+      <p class="muted small">حط رقم جوالك ويجيك تذكير على الواتساب قبل كل كويز أو واجب أو اختبار، بالوقت اللي تختاره 🔔</p>
+      <div class="bb-row">
+        <input id="waPhone" inputmode="tel" dir="ltr" placeholder="05xxxxxxxx" autocomplete="tel">
+        <button class="btn primary" data-wa="send" type="button">أرسل رمز التحقق</button>
+      </div>
+      <p class="muted small">🔒 رقمك يستخدم للتذكيرات بس، وما أحد يشوفه. والرقم اللي يرسل لك مخصص للتذكير وما يرد على الرسائل. تقدر توقفها أو تحذف رقمك أي وقت.</p>`;
+  }
+};
+$('#waCard').addEventListener('click', e => {
+  const b = e.target.closest('[data-wa]');
+  if (!b) return;
+  if (CONFIG.DEMO_MODE) return toast('الواتساب يشتغل بس على الموقع المنشور', 'err');
+  const w = state.profile?.wa || {};
+  const act = b.dataset.wa;
+  if (act === 'send') {
+    const phone = $('#waPhone').value.trim();
+    if (!phone) return toast('اكتب رقم جوالك', 'err');
+    Profile.call({ action: 'wa-send', phone }, '📲 أرسلنا لك رمز على الواتساب');
+  } else if (act === 'verify') {
+    const code = $('#waCode').value.replace(/\D/g, '');
+    if (code.length !== 6) return toast('الرمز 6 أرقام', 'err');
+    Profile.call({ action: 'wa-verify', code }, '🎉 تم! بيجيك التذكير على الواتساب');
+  } else if (act === 'again') {
+    state.profile.wa.pending = '';
+    Profile.renderWA();
+  } else if (act === 'toggle') {
+    Profile.call({ action: 'wa-settings', on: !w.on }, w.on ? 'وقفنا تذكيرات الواتساب ⏸️' : 'رجعت التذكيرات ✅');
+  } else if (act === 'digest') {
+    const on = !state.profile?.digest?.wa;
+    Profile.call({ action: 'digest', wa: on }, on ? '☀️ بيجيك ملخص يومك على الواتساب كل صباح' : 'وقفنا ملخص الواتساب');
+    } else if (act === 'remove') {
+    if (!confirm('تبي تحذف رقمك وتوقف تذكيرات الواتساب؟')) return;
+    Profile.call({ action: 'wa-remove' }, 'انحذف الرقم 🗑️');
+  }
+});
+$('#digestMail').addEventListener('click', () => {
+  if (CONFIG.DEMO_MODE) return toast('يشتغل بس على الموقع المنشور', 'err');
+  const on = state.profile?.digest?.mail === false;
+  Profile.call({ action: 'digest', mail: on }, on ? '☀️ بيجيك ملخص يومك على الإيميل كل صباح' : 'وقفنا ملخص الصباح');
+});
+$('#waCard').addEventListener('change', e => {
+  if (e.target.id === 'waLead') Profile.call({ action: 'wa-settings', lead: +e.target.value }, '✅ انحفظ');
+});
+
+/* =========================================================
+   👑 لوحة الأدمن (إحصائيات)
+   ========================================================= */
+const OPS = [
+  ['active', '👥 دخول (طلاب فعّالين)'], ['signup', '🆕 تسجيل جديد'], ['quiz', '🧠 كويزات انصنعت'],
+  ['grade', '✍️ تصحيح مقالي'], ['plan', '🗓️ رسائل لمخطط المذاكرة'], ['course', '📚 مواد جديدة'],
+  ['lib', '🔗 روابط وكويزات بالمكتبة'], ['upload', '📄 ملفات وصور انرفعت'], ['digest', '☀️ ملخصات صباح انرسلت'], ['wa', '💬 رسائل واتساب'], ['waOtp', '🔐 رموز تحقق واتساب']
+];
+const Admin = {
+  data: null,
+  at: 0,
+  sort: 'last',
+  q: '',
+  async load(force = false) {
+    if (CONFIG.DEMO_MODE) { $('#adminContent').innerHTML = '<p class="note">لوحة الإحصائيات تشتغل بس على الموقع المنشور.</p>'; return; }
+    if (!force && this.data && Date.now() - this.at < 60000) return this.render();
+    if (!this.data) $('#adminContent').innerHTML = '<div class="empty"><span>⏳</span>نجمع الأرقام...</div>';
+    try {
+      this.data = await api('admin');
+      this.at = Date.now();
+    } catch (e) {
+      $('#adminContent').innerHTML = `<p class="note">ما قدرنا نجيب البيانات: ${esc(e.message)}</p>`;
+      return;
+    }
+    this.render();
+  },
+  render() {
+    const d = this.data;
+    if (!d) return;
+    const now = Date.now();
+    const users = d.users;
+    const within = (t, days) => t && now - t < days * DAY;
+    const days = d.days;
+    const today = days[days.length - 1] || {};
+    const sum = (k, n = 30) => days.slice(-n).reduce((s, x) => s + (x[k] || 0), 0);
+    const aiCost = x => ((x.tin || 0) * d.prices.aiIn + (x.tout || 0) * d.prices.aiOut) / 1e6;
+    const ai30 = days.reduce((s, x) => s + aiCost(x), 0);
+    const wa30 = sum('wa') * d.prices.wa;
+    const money = v => `$${v.toFixed(2)} <small class="muted">(${(v * 3.75).toFixed(2)} ريال)</small>`;
+
+    // الرسم: الطلاب الفعّالين باليوم
+    const max = Math.max(1, ...days.map(x => x.active || 0));
+    const chart = days.map((x, i) => {
+      const h = Math.round(((x.active || 0) / max) * 100);
+      const lbl = i % 5 === 4 || i === days.length - 1 ? x.date.slice(8) + '/' + x.date.slice(5, 7) : '';
+      return `<div class="bar-col" title="${x.date}: ${x.active || 0} فعّال، ${x.signup || 0} جديد">
+        <i style="height:${h}%"></i>${x.signup ? `<em style="height:${Math.round((x.signup / max) * 100)}%"></em>` : ''}<small>${lbl}</small></div>`;
+    }).join('');
+
+    // توزيع الجامعات
+    const byUni = {};
+    users.forEach(u => { const k = u.uni || '—'; byUni[k] = (byUni[k] || 0) + 1; });
+    const uniRows = Object.entries(byUni).sort((a, b) => b[1] - a[1]);
+
+    // جدول المستخدمين
+    const score = u => (u.n.quiz || 0) * 3 + (u.n.plan || 0) + (u.n.lib || 0) * 2 + (u.n.upload || 0) * 2 + u.total + u.days * 2;
+    const sorters = {
+      last: (a, b) => (b.last || 0) - (a.last || 0),
+      joined: (a, b) => (b.joined || 0) - (a.joined || 0),
+      days: (a, b) => b.days - a.days,
+      tasks: (a, b) => b.total - a.total,
+      quiz: (a, b) => (b.n.quiz || 0) - (a.n.quiz || 0),
+      score: (a, b) => score(b) - score(a)
+    };
+    const q = this.q.toLowerCase();
+    const list = users.filter(u => !q || u.email.includes(q) || (d.unis[u.uni] || '').includes(this.q)).sort(sorters[this.sort]);
+    const th = (k, l) => `<th><button class="th ${this.sort === k ? 'sel' : ''}" data-sort="${k}" type="button">${l}${this.sort === k ? ' ▼' : ''}</button></th>`;
+
+    $('#adminContent').innerHTML = `
+      <div class="quiz-head">
+        <h3>👑 لوحة الأدمن</h3>
+        <button class="btn ghost sm" data-adm="refresh" type="button">🔄 تحديث</button>
+      </div>
+      <p class="muted small">آخر تحديث: ${fmtShort(this.at)} · الأرقام اليومية بدأت تنحسب من يوم التحديث</p>
+
+      <div class="kpis">
+        <div class="kpi"><b>${users.length}</b><small>كل المستخدمين</small></div>
+        <div class="kpi"><b>${users.filter(u => within(u.joined, 1)).length}</b><small>سجّلوا اليوم</small></div>
+        <div class="kpi"><b>${users.filter(u => within(u.joined, 7)).length}</b><small>سجّلوا هالأسبوع</small></div>
+        <div class="kpi hot"><b>${users.filter(u => within(u.last, 1)).length}</b><small>فعّالين اليوم</small></div>
+        <div class="kpi"><b>${users.filter(u => within(u.last, 7)).length}</b><small>فعّالين 7 أيام</small></div>
+        <div class="kpi"><b>${users.filter(u => within(u.last, 30)).length}</b><small>فعّالين 30 يوم</small></div>
+      </div>
+
+      <div class="adm-box">
+        <h4>📈 الطلاب الفعّالين باليوم (آخر 30 يوم) <small class="muted">· <span class="dot a"></span> فعّال <span class="dot s"></span> جديد</small></h4>
+        <div class="bars">${chart}</div>
+      </div>
+
+      <div class="adm-grid">
+        <div class="adm-box">
+          <h4>⚙️ العمليات</h4>
+          <table class="mini"><thead><tr><th></th><th>اليوم</th><th>7 أيام</th><th>30 يوم</th></tr></thead><tbody>
+            ${OPS.map(([k, l]) => `<tr><td>${l}</td><td>${today[k] || 0}</td><td>${sum(k, 7)}</td><td>${sum(k)}</td></tr>`).join('')}
+          </tbody></table>
+        </div>
+        <div class="adm-box">
+          <h4>💰 التكلفة التقديرية (30 يوم)</h4>
+          <div class="cost"><span>🤖 الذكاء الاصطناعي (Claude)</span><b>${money(ai30)}</b></div>
+          <div class="cost"><span>· اليوم</span><b>${money(aiCost(today))}</b></div>
+          <div class="cost"><span>💬 رسائل الواتساب</span><b>${money(wa30)}</b></div>
+          <div class="cost"><span>· رسائل هالشهر</span><b>${d.wa.month} / ${d.wa.limit}</b></div>
+          <p class="muted small">تقدير بس. الفاتورة الحقيقية في console.anthropic.com و Meta.</p>
+          <h4 style="margin-top:14px">🔌 الربط</h4>
+          <div class="cost"><span>🔗 ربطوا Blackboard/Classroom</span><b>${users.filter(u => u.bb).length}</b></div>
+          <div class="cost"><span>💬 فعّلوا الواتساب</span><b>${users.filter(u => u.wa === 'on').length}</b></div>
+        </div>
+      </div>
+
+      <div class="adm-grid">
+        <div class="adm-box">
+          <h4>🎓 الطلاب حسب الجامعة</h4>
+          ${uniRows.map(([k, n]) => `<div class="uni-bar"><span>${esc(d.unis[k] || 'ما اختار')}</span><i style="width:${Math.round(n / users.length * 100)}%"></i><b>${n}</b></div>`).join('')}
+        </div>
+        <div class="adm-box">
+          <h4>🛠️ الإعدادات</h4>
+          <div class="set-row"><div><b>📄 رفع الملفات في المكتبة</b><div class="muted small">لو الكريدت قرب يخلص، وقفه (الروابط تظل شغالة)</div></div>
+            <button class="btn ${d.settings.uploads ? 'ghost' : 'primary'} sm" data-adm="uploads" type="button">${d.settings.uploads ? '⏸️ وقّف' : '▶️ شغّل'}</button></div>
+          <div class="set-row"><div><b>💬 تذكيرات الواتساب</b><div class="muted small">${d.wa.configured ? 'مربوطة بـ Meta' : '⚠️ متغيرات WA_TOKEN و WA_PHONE_ID مو موجودة'}</div></div>
+            <button class="btn ${d.settings.wa ? 'ghost' : 'primary'} sm" data-adm="wa" type="button">${d.settings.wa ? '⏸️ وقّف' : '▶️ شغّل'}</button></div>
+        </div>
+      </div>
+
+      <div class="adm-box">
+        <h4>🚩 البلاغات في المكتبة (${d.reports.length})</h4>
+        ${d.reports.length ? d.reports.map(r => `<div class="rep ${r.hidden ? 'hid' : ''}">
+          <div><b>${esc(r.title)}</b><div class="muted small">${esc(r.uniName)} · <span dir="ltr">${esc(r.code)}</span> · ${r.n} بلاغ ${r.hidden ? '· 🚫 انخفى تلقائياً' : ''}</div></div>
+          <div class="acts">
+            <button class="btn ghost sm" data-rep="open" data-uni="${esc(r.uni)}" data-code="${esc(r.code)}" type="button">👀 افتح</button>
+            <button class="btn ghost sm" data-rep="restore" data-uni="${esc(r.uni)}" data-code="${esc(r.code)}" data-id="${esc(r.id)}" data-kind="${esc(r.kind)}" type="button">♻️ سليم</button>
+            <button class="btn ghost sm" data-rep="delete" data-uni="${esc(r.uni)}" data-code="${esc(r.code)}" data-id="${esc(r.id)}" data-kind="${esc(r.kind)}" type="button">🗑️ احذف</button>
+          </div></div>`).join('') : '<p class="muted small">ما فيه بلاغات 👌</p>'}
+      </div>
+
+      <div class="adm-box">
+        <h4>👥 المستخدمين (${list.length})</h4>
+        <input id="admSearch" placeholder="🔎 دوّر بالإيميل أو الجامعة" value="${esc(this.q)}">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>الإيميل</th><th>الجامعة</th>${th('joined', 'سجّل')}${th('last', 'آخر دخول')}${th('days', 'أيام')}${th('tasks', 'مهام')}${th('quiz', 'كويزات')}<th>خطة</th><th>مكتبة</th><th>🔗</th><th>💬</th>${th('score', '🔥 نشاط')}</tr></thead>
+            <tbody>${list.map(u => `
+              <tr>
+                <td dir="ltr">${esc(u.email)} ${u.admin ? '👑' : ''}</td>
+                <td>${esc(d.unis[u.uni] || '—')}</td>
+                <td>${fmtShort(u.joined)}</td>
+                <td>${fmtShort(u.last)}</td>
+                <td>${u.days}</td>
+                <td>${u.total} <small class="muted">(${u.open} مفتوحة)</small></td>
+                <td>${u.n.quiz || 0}</td>
+                <td>${u.n.plan || 0}</td>
+                <td>${(u.n.lib || 0) + (u.n.upload || 0) + (u.n.course || 0)}</td>
+                <td>${u.bb ? '✅' : ''}</td>
+                <td>${u.wa === 'on' ? '✅' : u.wa === 'off' ? '⏸️' : ''}</td>
+                <td>${score(u)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    const inp = $('#admSearch');
+    inp.addEventListener('input', () => { this.q = inp.value; const pos = inp.selectionStart; this.render(); const n = $('#admSearch'); n.focus(); n.setSelectionRange(pos, pos); });
+  }
+};
+$('#adminContent').addEventListener('click', async e => {
+  const s = e.target.closest('[data-sort]');
+  if (s) { Admin.sort = s.dataset.sort; Admin.render(); return; }
+  const a = e.target.closest('[data-adm]');
+  if (a) {
+    if (a.dataset.adm === 'refresh') return Admin.load(true);
+    const k = a.dataset.adm;
+    try {
+      const r = await api('admin', { method: 'POST', body: { action: 'settings', [k]: !Admin.data.settings[k] } });
+      Admin.data.settings = r.settings;
+      Admin.render();
+      toast('✅ انحفظ', 'ok');
+    } catch (err) { toast(esc(err.message), 'err'); }
+    return;
+  }
+  const r = e.target.closest('[data-rep]');
+  if (!r) return;
+  const { uni, code, id, kind } = r.dataset;
+  if (r.dataset.rep === 'open') return Library.openAt(uni, code);
+  if (r.dataset.rep === 'delete' && !confirm('تحذفه نهائياً؟')) return;
+  try {
+    await api('library', { method: 'POST', body: { action: r.dataset.rep, uni, code, id, kind } });
+    toast(r.dataset.rep === 'delete' ? 'انحذف 🗑️' : 'رجع ظاهر ♻️', 'ok');
+    Admin.load(true);
+  } catch (err) { toast(esc(err.message), 'err'); }
+});
+
 /* ---------- التشغيل ---------- */
 setInterval(() => { if (state.email) renderNextUp(); }, 1000);
 setInterval(() => { if (state.email) { render(); checkReminders(); } }, 30000);
 
-if (Auth.current()) { enterApp().then(checkReminders); }
-else showScreen('auth');
+// الدخول التلقائي: لو فيه جلسة محفوظة ندخل على طول ونجددها،
+// ولو انمسحت من المتصفح (سفاري يمسح بعد 7 أيام) نرجّعها من الكوكي
+(async () => {
+  const s = Auth.current();
+  if (s) {
+    await enterApp();
+    checkReminders();
+    if (!CONFIG.DEMO_MODE && Date.now() - (s.at || 0) > DAY) {
+      api('session').then(r => Auth.login(r)).catch(() => { });
+    }
+    return;
+  }
+  if (!CONFIG.DEMO_MODE) {
+    try {
+      const r = await api('session');
+      Auth.login(r);
+      await enterApp();
+      checkReminders();
+      return;
+    } catch { }
+  }
+  showScreen('auth');
+})();

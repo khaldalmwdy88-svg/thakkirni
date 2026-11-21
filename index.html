@@ -90,71 +90,198 @@
         <span>ذكّرني</span>
       </div>
       <div class="user">
-        <button id="notifBtn" class="icon-btn" title="تفعيل الإشعارات">🔔</button>
         <span id="adminBadge" class="badge gold" hidden>👑 أدمن</span>
-        <span id="userEmail" class="email-chip" dir="ltr"></span>
-        <button id="logoutBtn" class="btn ghost sm">خروج</button>
+        <button id="notifBtn" class="icon-btn" title="تفعيل الإشعارات">🔔</button>
       </div>
     </header>
 
     <main class="container">
-      <div class="greet">
-        <h1 id="greeting"></h1>
-        <p class="muted" id="todayStr"></p>
+
+      <!-- ============ 🏠 مهامي ============ -->
+      <div class="view" id="v-home">
+        <div class="greet">
+          <h1 id="greeting"></h1>
+          <p class="muted" id="todayStr"></p>
+        </div>
+
+        <div id="nextUp" class="next-up glass"></div>
+
+        <div class="stats">
+          <div class="stat glass"><span class="s-ico">📌</span><b id="stTotal">0</b><small>قادمة</small></div>
+          <div class="stat glass"><span class="s-ico">⏰</span><b id="stToday">0</b><small>خلال 24 ساعة</small></div>
+          <div class="stat glass"><span class="s-ico">⚠️</span><b id="stLate">0</b><small>متأخرة</small></div>
+          <div class="stat glass"><span class="s-ico">🏆</span><b id="stDone">0</b><small>منجزة</small></div>
+        </div>
+
+        <div class="list-wrap">
+          <div class="filters" id="filters"></div>
+          <div id="list"></div>
+        </div>
       </div>
 
-      <!-- الإحصائيات -->
-      <div class="stats">
-        <div class="stat glass"><span class="s-ico">📌</span><b id="stTotal">0</b><small>قادمة</small></div>
-        <div class="stat glass"><span class="s-ico">⏰</span><b id="stToday">0</b><small>خلال 24 ساعة</small></div>
-        <div class="stat glass"><span class="s-ico">⚠️</span><b id="stLate">0</b><small>متأخرة</small></div>
-        <div class="stat glass"><span class="s-ico">🏆</span><b id="stDone">0</b><small>منجزة</small></div>
-      </div>
+      <!-- ============ 🧠 المذاكرة ============ -->
+      <div class="view" id="v-study" hidden>
+        <div class="seg" id="studySeg">
+          <button type="button" data-s="quiz" class="sel">🧠 صانع الكويز</button>
+          <button type="button" data-s="plan">🗓️ خطة المذاكرة</button>
+        </div>
 
-      <!-- أقرب موعد -->
-      <div id="nextUp" class="next-up glass"></div>
+        <!-- صانع الكويز -->
+        <section class="card glass quiz-maker" id="quizMaker" data-sub="quiz">
+          <h3>🧠 صانع الكويز</h3>
+          <p class="muted small">ارفع بنك أسئلة أو صوّر ورقة الأسئلة، والذكاء الاصطناعي يحوّلها لكويز تفاعلي ويصححه لك.</p>
 
-      <!-- ربط Blackboard (اختياري) -->
-      <details class="card glass bb-card" id="bbCard">
-        <summary>
-          <span>🔗 ربط واجبات الجامعة <small class="muted">Blackboard · Classroom (اختياري)</small></span>
-          <span class="bb-state" id="bbState">غير مربوط</span>
-        </summary>
-        <div class="bb-body" id="bbBody"></div>
-      </details>
-
-      <div class="layout">
-        <!-- نموذج الإضافة -->
-        <form id="taskForm" class="card glass add-card" novalidate>
-          <h3>➕ أضف تذكير</h3>
-
-          <div class="type-picker" id="typePicker"></div>
-
-          <label>اسم المادة
-            <input id="fSubject" placeholder="مثلاً: IE200" required>
+          <label class="drop" id="dropZone">
+            <input type="file" id="qFile" accept=".pdf,.docx,.txt,image/*" multiple hidden>
+            <span class="d-ico">📄</span>
+            <b id="qFileName">اضغط لاختيار ملفات أو صور</b>
+            <small class="muted">PDF · Word (.docx) · TXT · صور 📷 — حتى 10 ملفات</small>
           </label>
-          <label>العنوان / ملاحظة
-            <input id="fTitle" placeholder="مثلاً: الفصل 3 و 4">
-          </label>
-          <div class="row">
-            <label>التاريخ
-              <input type="date" id="fDate" required>
+
+          <div class="mode-pick">
+            <label>
+              <input type="radio" name="qMode" value="same" checked>
+              <span>📋 نفس الأسئلة<small>بترتيب عشوائي</small></span>
             </label>
-            <label>الوقت
-              <input type="time" id="fTime" value="08:00">
+            <label>
+              <input type="radio" name="qMode" value="vary">
+              <span>🔀 غيّر الأرقام والصياغة<small>نفس الأفكار والصعوبة</small></span>
             </label>
           </div>
-          <div class="row">
-            <label>الدرجة <small class="muted">(اختياري)</small>
-              <input id="fGrade" placeholder="مثلاً: 10 درجات">
-            </label>
+
+          <button class="btn primary full" id="qGo" type="button">ولّد الكويز ✨</button>
+          <button class="btn ghost full mist-btn" id="mistBtn" type="button">📕 بنك الأخطاء <span id="mistCount">(0)</span></button>
+
+          <div id="qProgress" class="q-progress" hidden>
+            <div class="bar"><i></i></div>
             <span></span>
           </div>
-          <label>ملاحظة <small class="muted">(اختياري)</small>
-            <div class="with-mic">
-              <textarea id="fNote" rows="2" placeholder="مثلاً: ابدأ فيه بعد الميد، أو اسأل الدكتور عن النقطة الثالثة"></textarea>
-              <button type="button" class="mic" data-target="fNote" title="سجّل بصوتك">🎙️</button>
+        </section>
+
+        <!-- الكويز نفسه -->
+        <section class="card glass quiz-run" id="quizRun" data-sub="quiz" hidden></section>
+
+        <!-- خطة المذاكرة الذكية -->
+        <section class="card glass planner" id="planner" data-sub="plan" hidden>
+          <div class="quiz-head">
+            <h3>🗓️ خطة المذاكرة الذكية</h3>
+            <button class="btn ghost sm" id="planReset" type="button">🔄 خطة جديدة</button>
+          </div>
+          <p class="muted small">قول للمساعد عن اختبارك وظروفك، وهو يشوف تذكيراتك ويوزّع لك المذاكرة على الأيام.</p>
+
+          <div id="planChat" class="chat"></div>
+
+          <label class="attach" id="planAttach">
+            <input type="file" id="planFile" accept=".pdf,.docx,.txt" multiple hidden>
+            📎 <span id="planFileName">أرفق محتوى الاختبار: سكاشن، سلايدات، ملخص (اختياري)</span>
+          </label>
+
+          <div class="chat-input">
+            <textarea id="planMsg" rows="2" placeholder="مثال: عندي اختبار فيزياء يوم الأحد، الفصول 21 إلى 25. الثلاثاء مضغوط والأربعاء عندي واجب"></textarea>
+            <button type="button" class="mic" data-target="planMsg" title="سجّل بصوتك">🎙️</button>
+            <button class="btn primary" id="planSend" type="button">إرسال</button>
+          </div>
+
+          <div id="planView"></div>
+        </section>
+      </div>
+
+      <!-- ============ 📚 المكتبة ============ -->
+      <div class="view" id="v-lib" hidden>
+        <section class="card glass library" id="library">
+          <div id="libBody"></div>
+        </section>
+      </div>
+
+      <!-- ============ ⚙️ حسابي ============ -->
+      <div class="view" id="v-me" hidden>
+        <section class="card glass me-card">
+          <div class="me-head">
+            <div class="avatar" id="meAvatar">?</div>
+            <div>
+              <b id="userEmail" dir="ltr"></b>
+              <div class="muted small" id="meUni"></div>
             </div>
+            <button class="btn ghost sm" id="uniChange" type="button">🎓 تغيير الجامعة</button>
+          </div>
+        </section>
+
+        <!-- تذكير الواتساب -->
+        <section class="card glass wa-card" id="waCard"></section>
+
+        <!-- الإشعارات -->
+        <section class="card glass">
+          <h3>🔔 التنبيهات</h3>
+          <div class="set-row">
+            <div><b>📧 تذكير على الإيميل</b><div class="muted small">يوصلك دايماً قبل الموعد بالوقت اللي تختاره لكل مهمة</div></div>
+            <span class="pill ok">مفعّل</span>
+          </div>
+          <div class="set-row">
+            <div><b>☀️ ملخص الصباح على الإيميل</b><div class="muted small">كل يوم الساعة 7 الصبح: مذاكرة اليوم من خطتك + المواعيد القريبة (إذا عندك شي بس)</div></div>
+            <button class="btn ghost sm" id="digestMail" type="button">…</button>
+          </div>
+          <div class="set-row">
+            <div><b>📱 إشعارات المتصفح</b><div class="muted small">تطلع لك وانت فاتح الموقع</div></div>
+            <button class="btn ghost sm" id="notifBtn2" type="button">تفعيل</button>
+          </div>
+        </section>
+
+        <!-- ربط Blackboard (اختياري) -->
+        <details class="card glass bb-card" id="bbCard">
+          <summary>
+            <span>🔗 ربط واجبات الجامعة <small class="muted">Blackboard · Classroom (اختياري)</small></span>
+            <span class="bb-state" id="bbState">غير مربوط</span>
+          </summary>
+          <div class="bb-body" id="bbBody"></div>
+        </details>
+
+        <section class="card glass">
+          <div class="set-row">
+            <div><b>👨‍💻 مطور الموقع: خالد</b><div class="muted small">عندك فكرة أو مشكلة؟ كلمني</div></div>
+            <a class="btn ghost sm" href="https://wa.me/966583911037?text=%D9%87%D9%84%D8%A7%20%D8%AE%D8%A7%D9%84%D8%AF%20%F0%9F%91%8B%20%D8%A8%D8%AE%D8%B5%D9%88%D8%B5%20%D9%85%D9%88%D9%82%D8%B9%20%D8%B0%D9%83%D9%91%D8%B1%D9%86%D9%8A%3A%20" target="_blank" rel="noopener">💬 تواصل معي</a>
+          </div>
+          <button id="logoutBtn" class="btn ghost full" type="button" style="margin-top:14px">🚪 تسجيل خروج</button>
+        </section>
+      </div>
+
+      <!-- ============ 👑 الأدمن ============ -->
+      <div class="view" id="v-admin" hidden>
+        <section id="adminPanel" class="card glass admin">
+          <div id="adminContent"></div>
+        </section>
+      </div>
+    </main>
+
+    <!-- زر إضافة تذكير -->
+    <button class="fab" id="fab" type="button" title="أضف تذكير">＋</button>
+
+    <!-- نافذة إضافة تذكير -->
+    <div class="sheet" id="addSheet" hidden>
+      <form id="taskForm" class="sheet-box glass add-card" novalidate>
+        <div class="quiz-head">
+          <h3>➕ أضف تذكير</h3>
+          <button type="button" class="btn ghost sm" data-x>✖</button>
+        </div>
+
+        <div class="type-picker" id="typePicker"></div>
+
+        <label>اسم المادة
+          <input id="fSubject" placeholder="مثلاً: IE200" required>
+        </label>
+        <label>العنوان / ملاحظة
+          <input id="fTitle" placeholder="مثلاً: الفصل 3 و 4">
+        </label>
+        <div class="row">
+          <label>التاريخ
+            <input type="date" id="fDate" required>
+          </label>
+          <label>الوقت
+            <input type="time" id="fTime" value="08:00">
+          </label>
+        </div>
+        <div class="row">
+          <label>الدرجة <small class="muted">(اختياري)</small>
+            <input id="fGrade" placeholder="مثلاً: 10 درجات">
           </label>
           <label>ذكّرني قبلها بـ
             <select id="fRemind">
@@ -166,92 +293,25 @@
               <option value="10080">أسبوع</option>
             </select>
           </label>
-          <button class="btn primary full" type="submit">حفظ التذكير</button>
-        </form>
-
-        <!-- القائمة -->
-        <div class="list-wrap">
-          <div class="filters" id="filters"></div>
-          <div id="list"></div>
         </div>
-      </div>
-
-      <!-- خطة المذاكرة الذكية -->
-      <section class="card glass planner" id="planner">
-        <div class="quiz-head">
-          <h3>🗓️ خطة المذاكرة الذكية</h3>
-          <button class="btn ghost sm" id="planReset" type="button">ابدأ من جديد</button>
-        </div>
-        <p class="muted small">قول للمساعد عن اختبارك وظروفك، وهو يشوف تذكيراتك ويوزّع لك المذاكرة على الأيام.</p>
-
-        <div id="planChat" class="chat"></div>
-
-        <label class="attach" id="planAttach">
-          <input type="file" id="planFile" accept=".pdf,.docx,.txt" multiple hidden>
-          📎 <span id="planFileName">أرفق محتوى الاختبار: سكاشن، سلايدات، ملخص (اختياري)</span>
+        <label>ملاحظة <small class="muted">(اختياري)</small>
+          <div class="with-mic">
+            <textarea id="fNote" rows="2" placeholder="مثلاً: ابدأ فيه بعد الميد، أو اسأل الدكتور عن النقطة الثالثة"></textarea>
+            <button type="button" class="mic" data-target="fNote" title="سجّل بصوتك">🎙️</button>
+          </div>
         </label>
+        <button class="btn primary full" type="submit">حفظ التذكير</button>
+      </form>
+    </div>
 
-        <div class="chat-input">
-          <textarea id="planMsg" rows="2" placeholder="مثال: عندي اختبار فيزياء يوم الأحد، الفصول 21 إلى 25. الثلاثاء مضغوط والأربعاء عندي واجب"></textarea>
-          <button type="button" class="mic" data-target="planMsg" title="سجّل بصوتك">🎙️</button>
-          <button class="btn primary" id="planSend" type="button">إرسال</button>
-        </div>
-
-        <div id="planView"></div>
-      </section>
-
-      <!-- صانع الكويز -->
-      <section class="card glass quiz-maker" id="quizMaker">
-        <h3>🧠 صانع الكويز</h3>
-        <p class="muted small">ارفع بنك أسئلة أو صوّر ورقة الأسئلة، والذكاء الاصطناعي يحوّلها لكويز تفاعلي ويصححه لك.</p>
-
-        <label class="drop" id="dropZone">
-          <input type="file" id="qFile" accept=".pdf,.docx,.txt,image/*" multiple hidden>
-          <span class="d-ico">📄</span>
-          <b id="qFileName">اضغط لاختيار ملفات أو صور</b>
-          <small class="muted">PDF · Word (.docx) · TXT · صور 📷 — حتى 10 ملفات</small>
-        </label>
-
-        <div class="mode-pick">
-          <label>
-            <input type="radio" name="qMode" value="same" checked>
-            <span>📋 نفس الأسئلة<small>بترتيب عشوائي</small></span>
-          </label>
-          <label>
-            <input type="radio" name="qMode" value="vary">
-            <span>🔀 غيّر الأرقام والصياغة<small>نفس الأفكار والصعوبة</small></span>
-          </label>
-        </div>
-
-        <button class="btn primary full" id="qGo" type="button">ولّد الكويز ✨</button>
-        <button class="btn ghost full mist-btn" id="mistBtn" type="button">📕 بنك الأخطاء <span id="mistCount">(0)</span></button>
-
-        <div id="qProgress" class="q-progress" hidden>
-          <div class="bar"><i></i></div>
-          <span></span>
-        </div>
-      </section>
-
-      <!-- الكويز نفسه -->
-      <section class="card glass quiz-run" id="quizRun" hidden></section>
-
-      <!-- مكتبة المواد -->
-      <section class="card glass library" id="library">
-        <h3>📚 مكتبة المواد</h3>
-        <p class="muted small">كويزات شاركها طلاب كل مادة. دوّر على مادتك وحل على طول، وتنافس مع زملاؤك 🏆</p>
-        <div id="libBody"></div>
-      </section>
-
-      <!-- لوحة الأدمن -->
-      <section id="adminPanel" class="card glass admin" hidden>
-        <h3>👑 لوحة الأدمن</h3>
-        <div id="adminContent"></div>
-      </section>
-      <footer class="dev">
-        <span>👨‍💻 مطور الموقع: <b>خالد</b></span>
-        <a class="btn ghost sm" href="https://wa.me/966583911037?text=%D9%87%D9%84%D8%A7%20%D8%AE%D8%A7%D9%84%D8%AF%20%F0%9F%91%8B%20%D8%A8%D8%AE%D8%B5%D9%88%D8%B5%20%D9%85%D9%88%D9%82%D8%B9%20%D8%B0%D9%83%D9%91%D8%B1%D9%86%D9%8A%3A%20" target="_blank" rel="noopener">💬 تواصل معي</a>
-      </footer>
-    </main>
+    <!-- شريط التبويبات -->
+    <nav class="tabbar glass" id="tabbar">
+      <button type="button" data-v="home" class="sel"><span>🏠</span>مهامي</button>
+      <button type="button" data-v="study"><span>🧠</span>المذاكرة</button>
+      <button type="button" data-v="lib"><span>📚</span>المكتبة</button>
+      <button type="button" data-v="me"><span>⚙️</span>حسابي</button>
+      <button type="button" data-v="admin" id="adminTab" hidden><span>👑</span>الأدمن</button>
+    </nav>
   </section>
 
   <div id="toasts" aria-live="polite"></div>
