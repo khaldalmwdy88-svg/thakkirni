@@ -1,5 +1,6 @@
 // POST /api/verify-code  { email, code }  →  { token, email, admin }
-import { store, keyOf, isEmail, json, err, configured, hashCode, safeEq, signToken, isAdmin } from '../lib/util.mjs';
+import { store, keyOf, isEmail, json, err, configured, hashCode, safeEq, signToken, isAdmin, sessionCookie } from '../lib/util.mjs';
+import { touch, bump } from '../lib/stats.mjs';
 
 const MAX_TRIES = 5;
 
@@ -31,11 +32,15 @@ export default async req => {
 
   // تسجيل / تحديث المستخدم
   const users = store('users');
-  const u = (await users.get(k, { type: 'json' })) || { email, joined: Date.now() };
+  const old = await users.get(k, { type: 'json' });
+  const u = old || { email, joined: Date.now() };
+  const t = touch(u);
   u.last = Date.now();
   await users.setJSON(k, u);
+  await bump({ login: 1, ...(old ? {} : { signup: 1 }), ...(t.firstToday ? { active: 1 } : {}) });
 
-  return json({ token: signToken(email), email, admin: isAdmin(email) });
+  const token = signToken(email);
+  return json({ token, email, admin: isAdmin(email) }, 200, { 'set-cookie': sessionCookie(token) });
 };
 
 export const config = { path: '/api/verify-code' };

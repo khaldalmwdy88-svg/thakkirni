@@ -2,6 +2,7 @@
 // مساعد خطة المذاكرة: يسأل إذا ناقصه شي، أو يسوي/يعدّل الخطة
 import { err, readToken } from '../lib/util.mjs';
 import { useQuota, streamClaude } from '../lib/ai.mjs';
+import { track } from '../lib/stats.mjs';
 
 const DAILY_LIMIT = 40;
 
@@ -62,6 +63,7 @@ export default async req => {
     `Student's new message: ${message}`
   ].join('\n\n');
 
+  await track(email, 'plan');
   return streamClaude(SYSTEM, content, 6000);
 };
 

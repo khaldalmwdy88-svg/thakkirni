@@ -1,6 +1,8 @@
 // GET /api/tasks   → { tasks }
 // PUT /api/tasks   { tasks: [...] }
-import { store, keyOf, json, err, readToken, TYPES } from '../lib/util.mjs';
+import { store, keyOf, json, err, readToken, TYPES, getSettings } from '../lib/util.mjs';
+import { touch, bump } from '../lib/stats.mjs';
+import { profileOf } from '../lib/profile.mjs';
 
 const MAX = 500;
 const str = (v, n) => String(v ?? '').slice(0, n);
@@ -20,6 +22,7 @@ function clean(t, old) {
     n1: !!t.n1,
     n2: !!t.n2,
     e1: !!old?.e1 && old.due === due, // علامة "انرسل إيميل" يحددها السيرفر بس
+    w1: !!old?.w1 && old.due === due, // علامة "انرسل واتساب" يحددها السيرفر بس
     note: str(t.note, 500),           // ملاحظة اختيارية
     grade: str(t.grade, 30),          // الدرجة (اختياري)
     src: t.src === 'bb' ? 'bb' : '',  // جاي من Blackboard؟
@@ -37,7 +40,16 @@ export default async req => {
   const k = keyOf(email);
 
   if (req.method === 'GET') {
-    return json({ tasks: (await tasks.get(k, { type: 'json' })) || [] });
+    // نسجّل إن الطالب فتح الموقع اليوم (للإحصائيات) ونرجع بيانات حسابه مع المهام
+    const users = store('users');
+    const u = (await users.get(k, { type: 'json' })) || { email, joined: Date.now() };
+    const t = touch(u);
+    if (t.changed) await users.setJSON(k, u);
+    if (t.firstToday) await bump({ active: 1 });
+    return json({
+      tasks: (await tasks.get(k, { type: 'json' })) || [],
+      profile: profileOf(u, await getSettings())
+    });
   }
 
   if (req.method === 'PUT') {

@@ -2,6 +2,7 @@
 // يصحح الأسئلة المقالية والقصيرة
 import { json, err, readToken } from '../lib/util.mjs';
 import { askClaude, extractJSON, useQuota } from '../lib/ai.mjs';
+import { track } from '../lib/stats.mjs';
 
 const MAX_ITEMS = 10;
 const DAILY_LIMIT = 150;
@@ -34,6 +35,7 @@ export default async req => {
     return err('وصلت الحد اليومي للتصحيح، جرّب بكرة 🙏', 429);
   }
 
+  await track(email, 'grade');
   try {
     const reply = await askClaude(SYSTEM, JSON.stringify({ items }), 1500);
     const data = extractJSON(reply);
